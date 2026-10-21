@@ -1,0 +1,33 @@
+# Build products and temporary files
+build/
+target/
+dist/
+node_modules/
+*.class
+*.jar
+!lib/*.jar
+*.log
+runtime-dom.html
+# User data, backups and local settings
+data/
+backups/
+documentos/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.bak
+.env
+.env.*
+!.env.example
+# Editors and operating system
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+/config/settings.json
+/config/companies.json
+
+*.pdf

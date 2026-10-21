@@ -1,0 +1,13 @@
+{
+  "version": "0.0.6",
+  "root": "documentos",
+  "inbox": "AAA",
+  "review": "AAA\\REVISAO",
+  "errors": "AAA\\ERROS",
+  "threshold": 95,
+  "simulation": false,
+  "auto_process": true,
+  "destination_category": "RELATÓRIOS",
+  "create_folders": true,
+  "hash_duplicates": true
+}

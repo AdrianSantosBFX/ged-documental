@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="GED v0.0.6 — cadastro por Cartão CNPJ, monitoramento da AAA e arquivamento automático por competência." />
+  <title>GED • v0.0.6</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <aside id="sidebar" class="sidebar">
+      <div class="brand">
+        <div class="brand__mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="brand__text"><strong>GED</strong><small>Documentos inteligentes</small></div>
+      </div>
+
+      <nav class="nav" aria-label="Navegação principal">
+        <div class="nav__section">Operação</div>
+        <button class="nav__item is-active" data-page="dashboard" data-tip="Visão geral"><span data-icon="layout-dashboard"></span><span class="nav__label">Visão geral</span></button>
+        <button class="nav__item" data-page="inbox" data-tip="Caixa de entrada AAA"><span data-icon="inbox"></span><span class="nav__label">Caixa de entrada</span><span id="navInboxBadge" class="nav__badge">0</span></button>
+        <button class="nav__item" data-page="review" data-tip="Revisão"><span data-icon="file-search"></span><span class="nav__label">Revisão</span><span id="navReviewBadge" class="nav__muted">0</span></button>
+
+        <div class="nav__section">Estrutura</div>
+        <button class="nav__item" data-page="companies" data-tip="Empresas"><span data-icon="building-2"></span><span class="nav__label">Empresas</span><span id="navCompaniesCount" class="nav__muted">24</span></button>
+        <button class="nav__item" data-page="rules" data-tip="Regras e reconhecedores"><span data-icon="workflow"></span><span class="nav__label">Regras</span><span id="navRulesCount" class="nav__muted">12</span></button>
+        <button class="nav__item" data-page="history" data-tip="Histórico"><span data-icon="history"></span><span class="nav__label">Histórico</span></button>
+
+        <div class="nav__section">Sistema</div>
+        <button class="nav__item" data-page="settings" data-tip="Configurações"><span data-icon="settings"></span><span class="nav__label">Configurações</span></button>
+      </nav>
+
+      <div class="sidebar__footer">
+        <div class="version-card">
+          <div class="version-card__icon"><span data-icon="shield-check"></span></div>
+          <div class="version-card__text"><strong>v0.0.6 • Motor local</strong><small>Cartão CNPJ • AAA automática • pastas por competência</small></div>
+        </div>
+        <button id="collapseSidebar" class="sidebar__collapse" title="Recolher barra lateral"><span data-icon="panel-left-close"></span><span class="nav__label">Recolher menu</span></button>
+      </div>
+    </aside>
+
+    <main class="shell">
+      <header class="topbar">
+        <div class="topbar__left"><div class="breadcrumb"><span>GED</span><span data-icon="chevron-right"></span><strong id="breadcrumbCurrent">Visão geral</strong></div></div>
+        <div class="topbar__right">
+          <div id="serverChip" class="server-chip" title="Status do motor local"><span data-icon="folder-open"></span><span id="serverLabel">Conectando...</span><span id="serverStatusDot" class="server-chip__status"></span></div>
+          <label class="simulation-switch" title="O GED monitora a AAA e arquiva automaticamente relatórios reconhecidos com segurança">
+            <input id="simulationToggle" type="checkbox" checked disabled />
+            <span class="simulation-switch__track"><span></span></span><span>Automático</span>
+          </label>
+          <button class="icon-button" id="refreshButton" title="Atualizar dados"><span data-icon="refresh-cw"></span></button>
+        </div>
+      </header>
+      <section id="pageContent" class="content" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toasts" aria-live="polite"></div>
+
+  <script src="assets/icons.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+[
+  {
+    "id": "aliquota_iss_icms",
+    "name": "Alíquota ISS / ICMS",
+    "category": "RELATÓRIOS",
+    "priority": 120,
+    "signatures": [
+      "ALIQUOTA ISS / ICMS"
+    ],
+    "filename": "{empresa} - Alíquota ISS ICMS - {competencia}.pdf"
+  },
+  {
+    "id": "relacao_declaracoes_nfse_tomados",
+    "name": "Relação de Declarações NFS-e - Serviços Tomados",
+    "category": "RELATÓRIOS",
+    "priority": 120,
+    "signatures": [
+      "RELACAO DE DECLARACOES DE NOTAS FISCAIS DE SERVICOS ELETRONICAS",
+      "DECLARACAO SERVICOS TOMADOS"
+    ],
+    "filename": "{empresa} - Relação de Declarações NFS-e Serviços Tomados - {competencia}.pdf"
+  },
+  {
+    "id": "guia_issqn_tomados",
+    "name": "Guia ISSQN - Serviços Tomados",
+    "category": "RELATÓRIOS",
+    "priority": 118,
+    "signatures": [
+      "GUIA DE PAGAMENTO",
+      "SACADO",
+      "COMPETENCIA"
+    ],
+    "filename": "{empresa} - Guia ISSQN Serviços Tomados - {competencia}.pdf"
+  },
+  {
+    "id": "guia_issqn_municipal",
+    "name": "Guia ISSQN Municipal",
+    "category": "RELATÓRIOS",
+    "priority": 117,
+    "signatures": [
+      "DOCUMENTO DE ARRECADACAO MUNICIPAL",
+      "AGRUPAMENTO ISS"
+    ],
+    "filename": "{empresa} - Guia ISSQN Municipal - {competencia}.pdf"
+  },
+  {
+    "id": "livro_servicos_tomados",
+    "name": "Livro de Serviços Tomados",
+    "category": "RELATÓRIOS",
+    "priority": 116,
+    "signatures": [
+      "REGISTRO DE NOTAS FISCAIS DE SERVICOS TOMADOS",
+      "TERMO DE ABERTURA"
+    ],
+    "filename": "{empresa} - Livro de Serviços Tomados - {competencia}.pdf"
+  },
+  {
+    "id": "destda_recibo",
+    "name": "Recibo DeSTDA",
+    "category": "RELATÓRIOS",
+    "priority": 115,
+    "signatures": [
+      "RECIBO DE ENTREGA DE DOCUMENTOS DIGITAIS",
+      "CONTEUDO: DESTDA"
+    ],
+    "filename": "{empresa} - Recibo DeSTDA - {competencia}.pdf"
+  },
+  {
+    "id": "efd_contrib_recibo",
+    "name": "Recibo EFD-Contribuições",
+    "category": "RELATÓRIOS",
+    "priority": 114,
+    "signatures": [
+      "RECIBO DE ENTREGA DE ESCRITURACAO FISCAL DIGITAL - CONTRIBUICOES"
+    ],
+    "filename": "{empresa} - Recibo EFD-Contribuições - {competencia}.pdf"
+  },
+  {
+    "id": "sped_fiscal_recibo",
+    "name": "Recibo SPED Fiscal",
+    "category": "RELATÓRIOS",
+    "priority": 113,
+    "signatures": [
+      "RECIBO DE ENTREGA DE ESCRITURACAO FISCAL DIGITAL",
+      "SPED FISCAL"
+    ],
+    "filename": "{empresa} - Recibo SPED Fiscal - {competencia}.pdf"
+  },
+  {
+    "id": "iss_servicos_prestados",
+    "name": "Recibo ISS - Serviços Prestados",
+    "category": "RELATÓRIOS",
+    "priority": 112,
+    "signatures": [
+      "RECIBO DE DECLARACAO DE ISS - SERVICOS PRESTADOS"
+    ],
+    "filename": "{empresa} - Recibo ISS Serviços Prestados - {competencia}.pdf"
+  },
+  {
+    "id": "iss_servicos_tomados",
+    "name": "Recibo ISS - Serviços Tomados",
+    "category": "RELATÓRIOS",
+    "priority": 112,
+    "signatures": [
+      "RECIBO DE DECLARACAO DE ISS - SERVICOS TOMADOS"
+    ],
+    "filename": "{empresa} - Recibo ISS Serviços Tomados - {competencia}.pdf"
+  },
+  {
+    "id": "iss_resumo_analitico",
+    "name": "Relatório Resumo Analítico ISS",
+    "category": "RELATÓRIOS",
+    "priority": 111,
+    "signatures": [
+      "RELATORIO RESUMO ANALITICO",
+      "PREFEITURA DE BELO HORIZONTE"
+    ],
+    "filename": "{empresa} - Relatório Resumo Analítico ISS - {competencia}.pdf"
+  },
+  {
+    "id": "iss_relatorio_servicos_tomados",
+    "name": "Relatório de Serviços Tomados",
+    "category": "RELATÓRIOS",
+    "priority": 111,
+    "signatures": [
+      "RELATORIO DE SERVICOS TOMADOS",
+      "PREFEITURA DE BELO HORIZONTE"
+    ],
+    "filename": "{empresa} - Relatório de Serviços Tomados - {competencia}.pdf"
+  },
+  {
+    "id": "demonstrativo_issqn_debitos_creditos",
+    "name": "Demonstrativo de Débitos Créditos e ISSQN a Pagar",
+    "category": "RELATÓRIOS",
+    "priority": 110,
+    "signatures": [
+      "DEMONSTRATIVO DOS DEBITOS/CREDITOS E ISSQN A PAGAR"
+    ],
+    "filename": "{empresa} - Demonstrativo Débitos Créditos ISSQN - {competencia}.pdf"
+  },
+  {
+    "id": "conferencia_entradas",
+    "name": "Resumo da Conferência de Entradas",
+    "category": "RELATÓRIOS",
+    "priority": 109,
+    "signatures": [
+      "RESUMO DA CONFERENCIA DE ENTRADAS"
+    ],
+    "filename": "{empresa} - Resumo Conferência de Entradas - {competencia}.pdf"
+  },
+  {
+    "id": "conferencia_impostos_retidos",
+    "name": "Conferência de Impostos Retidos",
+    "category": "RELATÓRIOS",
+    "priority": 108,
+    "signatures": [
+      "CONFERENCIA DE IMPOSTOS RETIDOS"
+    ],
+    "filename": "{empresa} - Conferência de Impostos Retidos - {competencia}.pdf"
+  },
+  {
+    "id": "total_iss_natureza",
+    "name": "Total ISS por Natureza",
+    "category": "RELATÓRIOS",
+    "priority": 108,
+    "signatures": [
+      "TOTAIS ISS POR NATUREZA"
+    ],
+    "filename": "{empresa} - Total ISS por Natureza - {competencia}.pdf"
+  },
+  {
+    "id": "total_icms_natureza",
+    "name": "Total ICMS por Natureza",
+    "category": "RELATÓRIOS",
+    "priority": 107,
+    "signatures": [
+      "TOTAIS ICMS POR NATUREZA"
+    ],
+    "filename": "{empresa} - Total ICMS por Natureza - {competencia}.pdf"
+  },
+  {
+    "id": "auditoria_nfse_questor_prestados",
+    "name": "Auditoria NFS-e Portal x Questor - Serviços Prestados",
+    "category": "RELATÓRIOS",
+    "priority": 106,
+    "signatures": [
+      "AUDITORIA FISCAL",
+      "NFS-E PORTAL",
+      "QUESTOR",
+      "SERVICOS PRESTADOS"
+    ],
+    "filename": "{empresa} - Auditoria NFS-e Portal x Questor - Serviços Prestados - {competencia}.pdf"
+  },
+  {
+    "id": "auditoria_nfse_questor_tomados",
+    "name": "Auditoria NFS-e Portal x Questor - Serviços Tomados",
+    "category": "RELATÓRIOS",
+    "priority": 106,
+    "signatures": [
+      "AUDITORIA FISCAL",
+      "NFS-E PORTAL",
+      "QUESTOR",
+      "SERVICOS TOMADOS"
+    ],
+    "filename": "{empresa} - Auditoria NFS-e Portal x Questor - Serviços Tomados - {competencia}.pdf"
+  },
+  {
+    "id": "declaracao_faturamento",
+    "name": "Declaração de Faturamento",
+    "category": "RELATÓRIOS",
+    "priority": 105,
+    "signatures": [
+      "DECLARACAO DE FATURAMENTO"
+    ],
+    "filename": "{empresa} - Declaração de Faturamento - {competencia}.pdf"
+  },
+  {
+    "id": "demonstracao_efd_contrib",
+    "name": "Demonstração EFD-Contribuições",
+    "category": "RELATÓRIOS",
+    "priority": 104,
+    "signatures": [
+      "CONSOLIDACAO DA CONTRIBUICAO",
+      "PIS/PASEP",
+      "COFINS"
+    ],
+    "filename": "{empresa} - Demonstração EFD-Contribuições - {competencia}.pdf"
+  },
+  {
+    "id": "relatorio_lancamentos",
+    "name": "Relatório de Lançamentos",
+    "category": "RELATÓRIOS",
+    "priority": 103,
+    "signatures": [
+      "LANCAMENTOS GERAIS",
+      "FILTROS APLICADOS"
+    ],
+    "filename": "{empresa} - Relatório de Lançamentos - {competencia}.pdf"
+  },
+  {
+    "id": "livro_issqn",
+    "name": "Livro ISSQN",
+    "category": "RELATÓRIOS",
+    "priority": 102,
+    "signatures": [
+      "LIVRO DE ISS",
+      "REGISTRO DE ISS REFERENTE A COMPETENCIA"
+    ],
+    "filename": "{empresa} - Livro ISSQN - {competencia}.pdf"
+  },
+  {
+    "id": "efd_reinf_sem_movimento",
+    "name": "EFD-REINF - Sem Movimento",
+    "category": "RELATÓRIOS",
+    "priority": 90,
+    "signatures": [
+      "EFD-REINF",
+      "SEM MOVIMENTO"
+    ],
+    "filename": "{empresa} - EFD-REINF Sem Movimento - {competencia}.pdf",
+    "fallback": "metadata_filename"
+  }
+]

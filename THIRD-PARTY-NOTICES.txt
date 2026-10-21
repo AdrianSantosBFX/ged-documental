@@ -1,0 +1,15 @@
+GED v0.0.6 - Third-party notices
+
+This distribution includes:
+- Apache PDFBox 1.8.16
+- Apache FontBox 1.8.16
+- Apache Commons Logging 1.3.0
+
+These components are distributed under the Apache License 2.0.
+See APACHE-LICENSE-2.0.txt.
+
+The application frontend also includes a local subset of Lucide icons.
+See LUCIDE-LICENSE.txt.
+
+Note: PDFBox is bundled locally so the workstation needs only a compatible Java runtime;
+no Maven, Gradle, Python or internet connection is required to run the GED.
