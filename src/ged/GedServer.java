@@ -13,12 +13,20 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class GedServer {
-    public static final String VERSION="0.0.6";
+    public static final String VERSION="0.1.3";
     private static final Set<String> TECH=new HashSet<String>(Arrays.asList("AAA","_LOGS","_BACKUP","_CONFIG","REVISAO","ERROS"));
     private static final String REPORTS="RELATÓRIOS";
     private static final int MAX_UPLOAD=8*1024*1024;
     private final Path base;
     private final RecognitionEngine engine;
+    private final BrasilApiClient brasilApi;
+    private final Map<String,ApiPreview> pendingApi = new ConcurrentHashMap<String,ApiPreview>();
+    private static final long PREVIEW_EXPIRY_MS = 15 * 60 * 1000L;
+    private static final class ApiPreview {
+        final Map<String,Object> card;
+        final long expires;
+        ApiPreview(Map<String,Object> card) {this.card = card; this.expires = System.currentTimeMillis() + PREVIEW_EXPIRY_MS;}
+    }
     private HttpServer server;
     private volatile boolean monitorRunning=false;
     private volatile String monitorPath="";
@@ -29,14 +37,15 @@ public final class GedServer {
     private final Set<String> processing=Collections.newSetFromMap(new ConcurrentHashMap<String,Boolean>());
     private final Deque<Map<String,Object>> recentAuto=new ArrayDeque<Map<String,Object>>();
 
-    public GedServer(Path base){this.base=base;this.engine=new RecognitionEngine(base);}
+    public GedServer(Path base){this(base, new BrasilApiClient());}
+    GedServer(Path base, BrasilApiClient client){this.base=base;this.engine=new RecognitionEngine(base);this.brasilApi=client;}
     private Path settingsFile(){return base.resolve("config/settings.json");} private Path companiesFile(){return base.resolve("config/companies.json");} private Path historyFile(){return base.resolve("data/history.jsonl");}
     @SuppressWarnings("unchecked") private Map<String,Object> settings(){return (Map<String,Object>)Json.read(settingsFile(),new LinkedHashMap<String,Object>());}
     private static String s(Object o){return o==null?"":String.valueOf(o);} private static boolean bool(Object o,boolean d){return o instanceof Boolean?(Boolean)o:(o==null?d:Boolean.parseBoolean(s(o)));} private static int integer(Object o,int d){try{return o instanceof Number?((Number)o).intValue():Integer.parseInt(s(o));}catch(Exception e){return d;}}
     private Path root(Map<String,Object> st){return Paths.get(s(st.get("root")));} private Path inbox(Map<String,Object> st){return root(st).resolve(s(st.get("inbox")).isEmpty()?"AAA":s(st.get("inbox")));}
     private Map<String,Object> obj(){return new LinkedHashMap<String,Object>();}
 
-    private synchronized Map<String,Object> saveSettings(Map<String,Object> payload) throws IOException {Map<String,Object> cur=settings();String[] allowed={"root","inbox","review","errors","threshold","simulation","create_folders","hash_duplicates","auto_process"};for(String k:allowed)if(payload.containsKey(k))cur.put(k,payload.get(k));cur.put("destination_category",REPORTS);cur.put("simulation",false);if(!cur.containsKey("auto_process"))cur.put("auto_process",true);cur.put("version",VERSION);Json.write(settingsFile(),cur);return cur;}
+    private synchronized Map<String,Object> saveSettings(Map<String,Object> payload) throws IOException {Map<String,Object> cur=settings();String[] allowed={"root","inbox","review","errors","threshold","simulation","create_folders","hash_duplicates","auto_process","auto_register_companies"};for(String k:allowed)if(payload.containsKey(k))cur.put(k,payload.get(k));cur.put("destination_category",REPORTS);cur.put("simulation",false);if(!cur.containsKey("auto_process"))cur.put("auto_process",true);if(!cur.containsKey("auto_register_companies"))cur.put("auto_register_companies",true);cur.put("version",VERSION);Json.write(settingsFile(),cur);return cur;}
     private synchronized void saveCompanies(List<Map<String,Object>> cs) throws IOException {Collections.sort(cs,new Comparator<Map<String,Object>>(){public int compare(Map<String,Object>a,Map<String,Object>b){String aa=s(a.get("folder"));String bb=s(b.get("folder"));return aa.compareToIgnoreCase(bb);}});Json.write(companiesFile(),cs);}
 
     private List<String> safeParts(String...parts){List<String> out=new ArrayList<String>();for(String p:parts){String v=p==null?"":p.trim();if(v.isEmpty()||".".equals(v)||"..".equals(v)||v.contains("/")||v.contains("\\"))throw new IllegalArgumentException("Componente de pasta inválido: "+v);Path pp=Paths.get(v);if(pp.isAbsolute())throw new IllegalArgumentException("Componente de pasta inválido: "+v);out.add(v);}return out;}
@@ -52,9 +61,180 @@ public final class GedServer {
     private List<Object> readHistory(int limit){List<Object> out=new ArrayList<Object>();if(!Files.exists(historyFile()))return out;try{List<String> lines=Files.readAllLines(historyFile(),StandardCharsets.UTF_8);for(int i=lines.size()-1;i>=0&&out.size()<limit;i--)if(!lines.get(i).trim().isEmpty())out.add(Json.parse(lines.get(i)));}catch(Exception ignored){}return out;}
 
     private byte[] decodePdf(Map<String,Object> p){String e=s(p.get("content_base64"));if(e.isEmpty())throw new IllegalArgumentException("Nenhum arquivo foi enviado.");byte[] raw;try{raw=Base64.getDecoder().decode(e);}catch(Exception x){throw new IllegalArgumentException("O conteúdo do PDF enviado é inválido.");}if(raw.length>MAX_UPLOAD)throw new IllegalArgumentException("O PDF excede o limite de 8 MB desta versão.");if(raw.length<4||raw[0]!='%'||raw[1]!='P'||raw[2]!='D'||raw[3]!='F')throw new IllegalArgumentException("O arquivo enviado não parece ser um PDF válido.");return raw;}
-    private Map<String,Object> previewCard(Map<String,Object> payload,Map<String,Object> st) throws Exception {byte[] raw=decodePdf(payload);Path td=base.resolve("data/tmp");Files.createDirectories(td);Path tmp=Files.createTempFile(td,"cnpj-",".pdf");Map<String,Object> card;try{Files.write(tmp,raw);card=CompanyCardParser.parse(tmp);}finally{Files.deleteIfExists(tmp);}List<Map<String,Object>> cs=engine.companies();Map<String,Object> existing=null;for(Map<String,Object> c:cs)if(!s(card.get("cnpj")).isEmpty()&&s(card.get("cnpj")).equals(s(c.get("cnpj")))){existing=c;break;}String folder=card.get("legal_name")==null?null:PdfEngine.safeFolderName(s(card.get("folder")));Path r=root(st);Map<String,Object> o=obj();o.put("filename",s(payload.get("filename")).isEmpty()?"cartao-cnpj.pdf":s(payload.get("filename")));card.put("folder",folder);o.put("card",card);o.put("existing_company",existing);o.put("folder_path",folder==null?null:r.resolve(folder).toString());o.put("folder_exists",folder!=null&&Files.isDirectory(r.resolve(folder)));o.put("root_exists",Files.isDirectory(r));o.put("can_register",Boolean.TRUE.equals(card.get("valid"))&&Files.isDirectory(r));return o;}
-    private synchronized Map<String,Object> registerCard(Map<String,Object> preview,Map<String,Object> st) throws Exception {Map<String,Object> card=(Map<String,Object>)preview.get("card");if(!Boolean.TRUE.equals(card.get("valid")))throw new IllegalArgumentException("O cartão CNPJ não passou pelas validações do GED.");if(!Files.isDirectory(root(st)))throw new FileNotFoundException("A pasta raiz do servidor não existe: "+root(st));List<Map<String,Object>> cs=engine.companies();String cnpj=s(card.get("cnpj"));for(Map<String,Object> c:cs)if(cnpj.equals(s(c.get("cnpj")))){Map<String,Object> tree=ensureTree(st,s(c.get("folder")));Map<String,Object> o=obj();o.put("company",c);o.put("already_registered",true);o.put("folder_created",!((List<?>)tree.get("created")).isEmpty());o.put("created_dirs",tree.get("created"));o.put("folder_path",tree.get("path"));return o;}
-        String folder=PdfEngine.safeFolderName(s(card.get("folder")));for(Map<String,Object> c:cs)if(folder.equalsIgnoreCase(s(c.get("folder")))&&!s(c.get("cnpj")).isEmpty()&&!cnpj.equals(s(c.get("cnpj"))))throw new IllegalArgumentException("Já existe outra empresa parametrizada usando a mesma pasta.");Map<String,Object> tree=ensureTree(st,folder);List<Object> aliases=new ArrayList<Object>();String trade=s(card.get("trade_name"));if(!trade.isEmpty()&&!"********".equals(trade)&&!"*****".equals(trade))aliases.add(trade);Map<String,Object> co=obj();co.put("folder",folder);co.put("legal_name",card.get("legal_name"));co.put("cnpj",cnpj);co.put("aliases",aliases);co.put("trade_name",card.get("trade_name"));co.put("status",card.get("status"));co.put("municipality",card.get("municipality"));co.put("uf",card.get("uf"));co.put("main_activity",card.get("main_activity"));co.put("source","cartao_cnpj");co.put("registered_at",LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));List<Map<String,Object>> next=new ArrayList<Map<String,Object>>();for(Map<String,Object> c:cs)if(!folder.equalsIgnoreCase(s(c.get("folder"))))next.add(c);next.add(co);saveCompanies(next);Map<String,Object> he=obj();he.put("type","company_registration");he.put("message","Empresa cadastrada pelo Cartão CNPJ: "+s(co.get("legal_name"))+" ("+cnpj+").");he.put("company",folder);he.put("cnpj",cnpj);he.put("created_dirs",tree.get("created"));history(he);Map<String,Object> o=obj();o.put("company",co);o.put("already_registered",false);o.put("folder_created",!((List<?>)tree.get("created")).isEmpty());o.put("created_dirs",tree.get("created"));o.put("folder_path",tree.get("path"));return o;}
+    private Map<String,Object> previewCard(Map<String,Object> payload,Map<String,Object> st) throws Exception {
+        byte[] raw=decodePdf(payload);Path td=base.resolve("data/tmp");Files.createDirectories(td);
+        Path tmp=Files.createTempFile(td,"cnpj-",".pdf");Map<String,Object> card;
+        try{Files.write(tmp,raw);card=CompanyCardParser.parse(tmp);}finally{Files.deleteIfExists(tmp);}
+        Map<String,Object> out=prepareCompanyPreview(card,st);
+        out.put("filename",s(payload.get("filename")).isEmpty()?"cartao-cnpj.pdf":s(payload.get("filename")));
+        return out;
+    }
+
+    private Map<String,Object> prepareCompanyPreview(Map<String,Object> card,Map<String,Object> st){
+        List<Map<String,Object>> cs=engine.companies();Map<String,Object> existing=null;
+        String cnpj=BrasilApiClient.normalizeCnpj(s(card.get("cnpj")));
+        for(Map<String,Object> c:cs)if(!cnpj.isEmpty()&&cnpj.equals(BrasilApiClient.normalizeCnpj(s(c.get("cnpj"))))){existing=c;break;}
+        String folder=s(card.get("legal_name")).isEmpty()?null:PdfEngine.safeFolderName(s(card.get("folder")));
+        Path r=root(st);Map<String,Object> out=obj();card.put("folder",folder);
+        out.put("card",card);out.put("existing_company",existing);
+        // Existing registrations retain their original folder even when the company's legal name changes.
+        String linkedFolder=existing==null?folder:s(existing.get("folder"));
+        out.put("folder_path",linkedFolder==null?null:r.resolve(linkedFolder).toString());
+        out.put("folder_exists",linkedFolder!=null&&Files.isDirectory(r.resolve(linkedFolder)));
+        out.put("root_exists",Files.isDirectory(r));
+        out.put("can_register",Boolean.TRUE.equals(card.get("valid"))&&Files.isDirectory(r));return out;
+    }
+
+    private Map<String,Object> previewApi(Map<String,Object> payload,Map<String,Object> st) throws BrasilApiClient.ApiException {
+        Map<String,Object> card=brasilApi.consult(s(payload.get("cnpj")));
+        Map<String,Object> preview=prepareCompanyPreview(card,st);
+        long now=System.currentTimeMillis();
+        for(Map.Entry<String,ApiPreview> e:pendingApi.entrySet())if(e.getValue().expires<now)pendingApi.remove(e.getKey(),e.getValue());
+        // Limit pending previews: cache contains only minimally necessary public registration fields.
+        if(pendingApi.size()>=100)pendingApi.clear();
+        String token=UUID.randomUUID().toString();pendingApi.put(token,new ApiPreview(new LinkedHashMap<String,Object>(card)));
+        preview.put("preview_token",token);
+        preview.put("source","brasilapi");return preview;
+    }
+
+    private Map<String,Object> registerApi(Map<String,Object> payload,Map<String,Object> st) throws Exception {
+        String token=s(payload.get("preview_token"));
+        ApiPreview pending=pendingApi.get(token);
+        if(pending==null||pending.expires<System.currentTimeMillis()){
+            pendingApi.remove(token);
+            throw new IllegalArgumentException("A consulta expirou ou não foi encontrada. Consulte o CNPJ novamente.");
+        }
+        String checked=BrasilApiClient.normalizeCnpj(s(payload.get("cnpj")));
+        if(!checked.equals(BrasilApiClient.normalizeCnpj(s(pending.card.get("cnpj")))))
+            throw new IllegalArgumentException("O CNPJ informado não corresponde à consulta confirmada.");
+        Map<String,Object> preview=prepareCompanyPreview(new LinkedHashMap<String,Object>(pending.card),st);
+        Map<String,Object> registered=registerCompany(preview,st,"brasilapi");
+        pendingApi.remove(token);
+        return registered;
+    }
+
+    private synchronized Map<String,Object> registerCompany(Map<String,Object> preview,Map<String,Object> st,String source) throws Exception {
+        @SuppressWarnings("unchecked") Map<String,Object> card=(Map<String,Object>)preview.get("card");
+        if(!Boolean.TRUE.equals(card.get("valid")))throw new IllegalArgumentException("O cadastro CNPJ não passou pelas validações do Elevar GED.");
+        if(!Files.isDirectory(root(st)))throw new FileNotFoundException("A pasta raiz do servidor não existe: "+root(st));
+        List<Map<String,Object>> cs=engine.companies();String cnpj=s(card.get("cnpj"));
+        String canonical=BrasilApiClient.normalizeCnpj(cnpj);
+        for(Map<String,Object> c:cs)if(canonical.equals(BrasilApiClient.normalizeCnpj(s(c.get("cnpj"))))){
+            Map<String,Object> tree=ensureTree(st,s(c.get("folder")));Map<String,Object> out=obj();
+            out.put("company",c);out.put("already_registered",true);
+            out.put("folder_created",!((List<?>)tree.get("created")).isEmpty());out.put("created_dirs",tree.get("created"));out.put("folder_path",tree.get("path"));return out;
+        }
+        String folder=PdfEngine.safeFolderName(s(card.get("folder")));
+        for(Map<String,Object> c:cs)if(folder.equalsIgnoreCase(s(c.get("folder")))&&!canonical.equals(BrasilApiClient.normalizeCnpj(s(c.get("cnpj")))))
+            throw new IllegalArgumentException("Já existe outra empresa parametrizada usando a mesma pasta.");
+        Map<String,Object> tree=ensureTree(st,folder);
+        List<Object> aliases=new ArrayList<Object>();String trade=s(card.get("trade_name"));
+        if(!trade.isEmpty()&&!"********".equals(trade)&&!"*****".equals(trade))aliases.add(trade);
+        Map<String,Object> co=obj();co.put("folder",folder);co.put("legal_name",card.get("legal_name"));co.put("cnpj",cnpj);
+        co.put("aliases",aliases);co.put("trade_name",card.get("trade_name"));co.put("status",card.get("status"));
+        co.put("municipality",card.get("municipality"));co.put("uf",card.get("uf"));co.put("main_activity",card.get("main_activity"));
+        co.put("source",source);co.put("registered_at",LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        if(source.startsWith("brasilapi")){
+            String[] details={"cnae_fiscal","natureza_juridica","porte","data_inicio_atividade","logradouro","numero","bairro","cep","complemento","opcao_pelo_simples","opcao_pelo_mei","consulted_at"};
+            for(String k:details)if(card.containsKey(k))co.put(k,card.get(k));
+        }
+        List<Map<String,Object>> next=new ArrayList<Map<String,Object>>(cs);next.add(co);saveCompanies(next);
+        Map<String,Object> he=obj();he.put("type","company_registration");
+        he.put("message","Empresa cadastrada via "+("brasilapi_auto".equals(source)?"BrasilAPI (automático)":"brasilapi".equals(source)?"BrasilAPI":"Cartão CNPJ")+": "+s(co.get("legal_name"))+" ("+cnpj+").");
+        he.put("company",folder);he.put("cnpj",cnpj);he.put("source",source);he.put("created_dirs",tree.get("created"));history(he);
+        Map<String,Object> out=obj();out.put("company",co);out.put("already_registered",false);
+        out.put("folder_created",!((List<?>)tree.get("created")).isEmpty());out.put("created_dirs",tree.get("created"));out.put("folder_path",tree.get("path"));return out;
+    }
+    /**
+     * Cadastro automático restrito a PDFs reconhecidos: o documento deve identificar
+     * exatamente um CNPJ válido e ter regra + competência confiáveis. A consulta
+     * externa envia somente o CNPJ; texto, PDF e seus dados nunca são transmitidos.
+     * Retorna o relatório original ou uma nova análise com a empresa recém-cadastrada.
+     */
+    @SuppressWarnings("unchecked")
+    synchronized Map<String,Object> registerUnknownCompanyForDocument(Path path, Map<String,Object> initial,
+                                                                        Map<String,Object> st, List<Map<String,Object>> rules) {
+        if(!bool(st.get("auto_register_companies"),true))return initial;
+        Map<String,Object> company=(Map<String,Object>)initial.get("company");
+        if(company==null||Boolean.TRUE.equals(company.get("registered")))return initial;
+        List<String> detected=(List<String>)company.get("detected_cnpjs");
+        if(detected==null||detected.isEmpty())return initial;
+        Map<String,Object> outcome=obj();
+        outcome.put("source","brasilapi_auto");
+        outcome.put("detected_cnpjs",new ArrayList<String>(detected));
+        initial.put("auto_registration",outcome);
+        if(detected.size()!=1){
+            outcome.put("status","skipped");outcome.put("reason","Mais de um CNPJ válido no PDF; não é seguro decidir qual empresa cadastrar.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        String cnpj=BrasilApiClient.normalizeCnpj(detected.get(0));
+        outcome.put("cnpj",BrasilApiClient.formatCnpj(cnpj));
+        if(!BrasilApiClient.validCnpj(cnpj)){
+            outcome.put("status","skipped");outcome.put("reason","O CNPJ extraído não passou na validação.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        Map<String,Object> doc=(Map<String,Object>)initial.get("document"),comp=(Map<String,Object>)initial.get("competence");
+        String ruleId=doc==null?"":s(doc.get("id"));String competence=comp==null?"":s(comp.get("value"));
+        if(doc!=null&&!"texto".equals(s(doc.get("source")))){
+            outcome.put("status","skipped");outcome.put("reason","O tipo documental precisa ser reconhecido no conteúdo do PDF, não somente no nome ou nos metadados.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        if(ruleId.isEmpty()||!competence.matches("(?:0[1-9]|1[0-2])-20[0-9]{2}")){
+            outcome.put("status","skipped");outcome.put("reason","É necessário reconhecer o documento e sua competência antes do cadastro automático.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        Map<String,Object> matchedRule=null;
+        for(Map<String,Object> rule:rules)if(ruleId.equals(s(rule.get("id")))){matchedRule=rule;break;}
+        if(matchedRule==null||!REPORTS.equalsIgnoreCase(s(matchedRule.get("category")))){
+            outcome.put("status","skipped");outcome.put("reason","Tipo documental fora do escopo de arquivamento automático.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        // Pré-cálculo conservador: mesmo com a empresa identificada a 100%,
+        // não cadastrar se a confiança final do documento ficaria abaixo do limiar.
+        int projected=(int)Math.round(integer(doc.get("confidence"),0)*.40 + 100*.35 + integer(comp.get("confidence"),0)*.25);
+        outcome.put("projected_confidence",projected);
+        if(projected<integer(st.get("threshold"),95)){
+            outcome.put("status","skipped");outcome.put("reason","Confiança projetada de "+projected+"% inferior ao limite para arquivamento automático.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        if(!bool(st.get("create_folders"),true)){
+            outcome.put("status","skipped");outcome.put("reason","A criação de pastas está desativada nas configurações.");
+            initial.put("review_reason",s(outcome.get("reason")));return initial;
+        }
+        try {
+            // Checagem repetida dentro da região sincronizada: dois documentos da
+            // mesma empresa não geram cadastros duplicados no mesmo processo.
+            boolean known=false;
+            for(Map<String,Object> existing:engine.companies())
+                if(cnpj.equals(BrasilApiClient.normalizeCnpj(s(existing.get("cnpj"))))){known=true;break;}
+            if(!known){
+                Map<String,Object> card=brasilApi.consult(cnpj);
+                Map<String,Object> preview=prepareCompanyPreview(card,st);
+                if(!Boolean.TRUE.equals(preview.get("can_register")))throw new IOException("Cadastro consultado sem validação suficiente para criar a pasta.");
+                Map<String,Object> registration=registerCompany(preview,st,"brasilapi_auto");
+                outcome.put("folder_created",registration.get("folder_created"));
+                outcome.put("folder_path",registration.get("folder_path"));
+                outcome.put("company",s(((Map<String,Object>)registration.get("company")).get("legal_name")));
+                outcome.put("status",Boolean.TRUE.equals(registration.get("already_registered"))?"existing":"created");
+            } else {
+                outcome.put("status","existing");
+            }
+            Map<String,Object> reanalyzed=engine.analyze(path,st,engine.companies(),rules);
+            reanalyzed.put("auto_registration",outcome);
+            if(!"recognized".equals(s(reanalyzed.get("status")))){
+                // Cadastro pode ser válido mesmo se a segunda análise não atingir o
+                // mínimo. Em nenhuma circunstância forçar o arquivamento.
+                reanalyzed.put("review_reason","Empresa cadastrada, mas o documento ainda exige revisão: "+s(reanalyzed.get("review_reason")));
+            }
+            return reanalyzed;
+        } catch(Exception ex) {
+            outcome.put("status","failed");
+            outcome.put("reason",ex.getMessage()==null?"Falha na consulta ou no cadastro da empresa.":ex.getMessage());
+            initial.put("review_reason","Cadastro automático não concluído: "+s(outcome.get("reason")));
+            return initial;
+        }
+    }
+
     private Map<String,Object> ensureResult(Map<String,Object> r,Map<String,Object> st) throws Exception {Map<String,Object> o=obj();if(!"recognized".equals(s(r.get("status")))){o.put("ensured",false);o.put("created",new ArrayList<Object>());o.put("reason","documento não aprovado para arquivamento automático");return o;}Map<String,Object> co=(Map<String,Object>)r.get("company"),cp=(Map<String,Object>)r.get("competence");String company=co==null?"":s(co.get("folder")),comp=cp==null?"":s(cp.get("value"));if(company.isEmpty()||comp.isEmpty()||!comp.contains("-")){o.put("ensured",false);o.put("created",new ArrayList<Object>());o.put("reason","empresa/competência incompleta");return o;}String year=comp.substring(comp.indexOf('-')+1);Map<String,Object> t;if(bool(st.get("create_folders"),true)){t=ensureTree(st,company,year,comp,REPORTS);}else{Path target=root(st).resolve(company).resolve(year).resolve(comp).resolve(REPORTS);if(!Files.isDirectory(target))throw new IOException("A estrutura de destino não existe e a criação automática de pastas está desativada: "+target);t=obj();t.put("path",target.toString());t.put("created",new ArrayList<Object>());t.put("created_count",0);}o.put("ensured",true);o.putAll(t);return o;}
 
 
@@ -66,18 +246,24 @@ public final class GedServer {
     private List<Object> recentAuto(){List<Object> out=new ArrayList<Object>();synchronized(recentAuto){for(Map<String,Object> r:recentAuto)out.add(new LinkedHashMap<String,Object>(r));}return out;}
     private Map<String,Object> routeException(Path src,Map<String,Object> st,String key,String fallback,String reason) throws Exception {Path dir=configuredFolder(st,key,fallback);Path dest=uniqueChild(dir,src.getFileName().toString());moveFile(src,dest);Map<String,Object> o=obj();o.put("moved",true);o.put("destination",dest.toString());o.put("reason",reason);return o;}
     private Map<String,Object> archiveRecognized(Path src,Map<String,Object> r,Map<String,Object> st) throws Exception {Map<String,Object> fr=ensureResult(r,st);r.put("folder_structure",fr);Path destDir=Paths.get(s(r.get("destination_dir")));String proposed=s(r.get("proposed_name"));if(proposed.isEmpty())throw new IOException("O reconhecedor não gerou um nome de destino.");Path dest=destDir.resolve(proposed);Path rr=root(st).toRealPath().toAbsolutePath().normalize();Path normalized=dest.toAbsolutePath().normalize();if(!normalized.startsWith(rr))throw new IOException("Destino calculado fora da raiz configurada.");if(Files.exists(dest)){String srcHash=s(r.get("hash")),destHash="";try{destHash=PdfEngine.sha256(dest);}catch(Exception ignored){}String reason=!srcHash.isEmpty()&&srcHash.equals(destHash)?"duplicado idêntico já arquivado":"colisão de nome no destino";Map<String,Object> ex=routeException(src,st,"review","AAA\\REVISAO",reason);r.put("archive_action","review");r.put("archive_reason",reason);r.put("final_path",ex.get("destination"));r.put("archived",false);r.put("status","review");return r;}moveFile(src,dest);r.put("archived",true);r.put("archive_action","archived");r.put("original_path",src.toString());r.put("final_path",dest.toString());r.put("final_name",dest.getFileName().toString());return r;}
-    private Map<String,Object> processOne(Path path,String trigger){String key=path.toAbsolutePath().normalize().toString().toLowerCase(Locale.ROOT);if(!processing.add(key))return null;try{if(!waitStable(path))return null;Map<String,Object> st=settings();if(!bool(st.get("auto_process"),true))return null;List<Map<String,Object>> cs=engine.companies(),rs=engine.rules();Map<String,Object> r=engine.analyze(path,st,cs,rs);r.put("trigger",trigger);r.put("automatic",true);String status=s(r.get("status"));try{if("recognized".equals(status)&&REPORTS.equalsIgnoreCase(s(r.get("category")))){archiveRecognized(path,r,st);}else if("recognized".equals(status)){Map<String,Object> ex=routeException(path,st,"review","AAA\\REVISAO","categoria ainda fora do escopo automático da v"+VERSION);r.put("status","review");r.put("archive_action","review");r.put("archive_reason","categoria fora do escopo: "+s(r.get("category")));r.put("final_path",ex.get("destination"));r.put("archived",false);}else if("error".equals(status)){Map<String,Object> ex=routeException(path,st,"errors","AAA\\ERROS","erro técnico no processamento");r.put("archive_action","error");r.put("final_path",ex.get("destination"));r.put("archived",false);}else{Map<String,Object> ex=routeException(path,st,"review","AAA\\REVISAO",!s(r.get("review_reason")).isEmpty()?s(r.get("review_reason")):"documento exige revisão ou ainda não está parametrizado");r.put("archive_action","review");r.put("final_path",ex.get("destination"));r.put("archived",false);}}catch(Exception moveError){r.put("archive_action","failed");r.put("archived",false);r.put("archive_error",moveError.getMessage());r.put("status","error");}
-            addRecent(r);Map<String,Object> he=obj();String action=s(r.get("archive_action"));he.put("type","archived".equals(action)?"auto_archive":"error".equals(action)?"auto_error":"auto_review");he.put("message","archived".equals(action)?"Documento arquivado automaticamente: "+s(r.get("final_name")):"error".equals(action)?"Documento enviado para ERROS: "+s(r.get("name")):"Documento enviado para REVISÃO: "+s(r.get("name")));he.put("source",s(r.get("path")));he.put("destination",s(r.get("final_path")));he.put("document",r.get("document"));he.put("company",r.get("company"));he.put("competence",r.get("competence"));he.put("confidence",r.get("confidence"));history(he);return r;
+    Map<String,Object> processOne(Path path,String trigger){String key=path.toAbsolutePath().normalize().toString().toLowerCase(Locale.ROOT);if(!processing.add(key))return null;try{if(!waitStable(path))return null;Map<String,Object> st=settings();if(!bool(st.get("auto_process"),true))return null;List<Map<String,Object>> cs=engine.companies(),rs=engine.rules();Map<String,Object> r=engine.analyze(path,st,cs,rs);r=registerUnknownCompanyForDocument(path,r,st,rs);r.put("trigger",trigger);r.put("automatic",true);String status=s(r.get("status"));try{if("recognized".equals(status)&&REPORTS.equalsIgnoreCase(s(r.get("category")))){archiveRecognized(path,r,st);}else if("recognized".equals(status)){Map<String,Object> ex=routeException(path,st,"review","AAA\\REVISAO","categoria ainda fora do escopo automático da v"+VERSION);r.put("status","review");r.put("archive_action","review");r.put("archive_reason","categoria fora do escopo: "+s(r.get("category")));r.put("final_path",ex.get("destination"));r.put("archived",false);}else if("error".equals(status)){Map<String,Object> ex=routeException(path,st,"errors","AAA\\ERROS","erro técnico no processamento");r.put("archive_action","error");r.put("final_path",ex.get("destination"));r.put("archived",false);}else{Map<String,Object> ex=routeException(path,st,"review","AAA\\REVISAO",!s(r.get("review_reason")).isEmpty()?s(r.get("review_reason")):"documento exige revisão ou ainda não está parametrizado");r.put("archive_action","review");r.put("final_path",ex.get("destination"));r.put("archived",false);}}catch(Exception moveError){r.put("archive_action","failed");r.put("archived",false);r.put("archive_error",moveError.getMessage());r.put("status","error");}
+            addRecent(r);Map<String,Object> he=obj();String action=s(r.get("archive_action"));he.put("type","archived".equals(action)?"auto_archive":"error".equals(action)?"auto_error":"auto_review");he.put("message","archived".equals(action)?"Documento arquivado automaticamente: "+s(r.get("final_name")):"error".equals(action)?"Documento enviado para ERROS: "+s(r.get("name")):"Documento enviado para REVISÃO: "+s(r.get("name")));he.put("source",s(r.get("path")));he.put("destination",s(r.get("final_path")));he.put("document",r.get("document"));he.put("company",r.get("company"));he.put("competence",r.get("competence"));he.put("confidence",r.get("confidence"));if(r.containsKey("auto_registration"))he.put("auto_registration",r.get("auto_registration"));history(he);return r;
         }catch(Exception e){monitorError=e.getClass().getSimpleName()+": "+e.getMessage();Map<String,Object> he=obj();he.put("type","auto_error");he.put("message","Falha ao processar automaticamente "+path.getFileName()+": "+monitorError);history(he);return null;}finally{processing.remove(key);}}
     private void sweepInbox(String trigger){try{Map<String,Object> st=settings();if(!bool(st.get("auto_process"),true))return;ensureInbox(st);Path dir=inbox(st);if(!Files.isDirectory(dir))return;DirectoryStream<Path> ds=Files.newDirectoryStream(dir);try{for(Path p:ds)if(Files.isRegularFile(p)){String n=p.getFileName().toString().toLowerCase(Locale.ROOT);if(n.endsWith(".tmp")||n.endsWith(".part")||n.endsWith(".crdownload"))continue;processOne(p,trigger);}}finally{ds.close();}}catch(Exception e){monitorError=e.getMessage()==null?e.toString():e.getMessage();}}
     private synchronized void stopMonitor(){monitorRunning=false;if(watchService!=null)try{watchService.close();}catch(Exception ignored){}watchService=null;if(monitorThread!=null)monitorThread.interrupt();monitorThread=null;}
-    private synchronized void restartMonitor(){stopMonitor();Map<String,Object> st=settings();if(!bool(st.get("auto_process"),true))return;try{ensureInbox(st);final Path dir=inbox(st);if(!Files.isDirectory(dir)){monitorError="Pasta AAA não encontrada: "+dir;return;}watchService=FileSystems.getDefault().newWatchService();dir.register(watchService,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY);monitorPath=dir.toString();monitorError="";monitorRunning=true;final WatchService ws=watchService;monitorThread=new Thread(new Runnable(){public void run(){try{Thread.sleep(600);sweepInbox("startup");while(monitorRunning&&ws==watchService){WatchKey k=null;try{k=ws.poll(4,TimeUnit.SECONDS);}catch(InterruptedException e){if(!monitorRunning)return;}if(k!=null){for(WatchEvent<?> ev:k.pollEvents()){if(ev.kind()==StandardWatchEventKinds.OVERFLOW)continue;Object ctx=ev.context();if(ctx instanceof Path){Path p=dir.resolve((Path)ctx);if(Files.isRegularFile(p))processOne(p,"watcher");}}if(!k.reset())break;}sweepInbox("periodic");}}catch(ClosedWatchServiceException ignored){}catch(Exception e){monitorError=e.getMessage()==null?e.toString():e.getMessage();}finally{if(ws==watchService)monitorRunning=false;}}},"GED-AAA-Monitor");monitorThread.setDaemon(true);monitorThread.start();}catch(Exception e){monitorRunning=false;monitorError=e.getMessage()==null?e.toString():e.getMessage();}}
+    private synchronized void restartMonitor(){stopMonitor();Map<String,Object> st=settings();if(!bool(st.get("auto_process"),true))return;try{ensureInbox(st);final Path dir=inbox(st);if(!Files.isDirectory(dir)){monitorError="Pasta AAA não encontrada: "+dir;return;}watchService=FileSystems.getDefault().newWatchService();dir.register(watchService,StandardWatchEventKinds.ENTRY_CREATE,StandardWatchEventKinds.ENTRY_MODIFY);monitorPath=dir.toString();monitorError="";monitorRunning=true;final WatchService ws=watchService;monitorThread=new Thread(new Runnable(){public void run(){try{Thread.sleep(600);sweepInbox("startup");while(monitorRunning&&ws==watchService){WatchKey k=null;try{k=ws.poll(4,TimeUnit.SECONDS);}catch(InterruptedException e){if(!monitorRunning)return;}if(k!=null){for(WatchEvent<?> ev:k.pollEvents()){if(ev.kind()==StandardWatchEventKinds.OVERFLOW)continue;Object ctx=ev.context();if(ctx instanceof Path){Path p=dir.resolve((Path)ctx);if(Files.isRegularFile(p))processOne(p,"watcher");}}if(!k.reset())break;}sweepInbox("periodic");}}catch(ClosedWatchServiceException ignored){}catch(Exception e){monitorError=e.getMessage()==null?e.toString():e.getMessage();}finally{if(ws==watchService)monitorRunning=false;}}},"ElevarGED-AAA-Monitor");monitorThread.setDaemon(true);monitorThread.start();}catch(Exception e){monitorRunning=false;monitorError=e.getMessage()==null?e.toString():e.getMessage();}}
 
-    public void start(String host,int port,boolean browser) throws Exception {Map<String,Object> st=settings();try{ensureInbox(st);}catch(Exception ignored){}server=HttpServer.create(new InetSocketAddress(host,port),0);server.createContext("/",new Handler());server.setExecutor(Executors.newCachedThreadPool());server.start();restartMonitor();String url="http://"+host+":"+port+"/";System.out.println("==================================================================");System.out.println(" GED v"+VERSION+" - motor documental Java");System.out.println(" Interface: "+url);System.out.println(" Servidor:  "+s(st.get("root")));System.out.println(" Arquivos:  AUTOMÁTICO (AAA monitorada em tempo real)");System.out.println(" Destino:   empresa cadastrada\\ano\\MM-AAAA\\RELATÓRIOS");System.out.println(" Monitor:   "+(monitorRunning?"ATIVO":"INATIVO")+" - "+monitorPath);System.out.println(" Java:      "+System.getProperty("java.version"));System.out.println("==================================================================");if(browser&&Desktop.isDesktopSupported())new Thread(new Runnable(){public void run(){try{Thread.sleep(700);Desktop.getDesktop().browse(new URI(url));}catch(Exception ignored){}}}).start();}
+    public void start(String host,int port,boolean browser) throws Exception {Map<String,Object> st=settings();try{ensureInbox(st);}catch(Exception ignored){}server=HttpServer.create(new InetSocketAddress(host,port),0);server.createContext("/",new Handler());server.setExecutor(Executors.newCachedThreadPool());server.start();restartMonitor();String url="http://"+host+":"+port+"/";System.out.println("==================================================================");System.out.println(" Elevar GED v"+VERSION+" - motor documental Java");System.out.println(" Interface: "+url);System.out.println(" Servidor:  "+s(st.get("root")));System.out.println(" Arquivos:  AUTOMÁTICO (AAA monitorada em tempo real)");System.out.println(" Destino:   empresa cadastrada\\ano\\MM-AAAA\\RELATÓRIOS");System.out.println(" Monitor:   "+(monitorRunning?"ATIVO":"INATIVO")+" - "+monitorPath);System.out.println(" Java:      "+System.getProperty("java.version"));System.out.println("==================================================================");if(browser&&Desktop.isDesktopSupported())new Thread(new Runnable(){public void run(){try{Thread.sleep(700);Desktop.getDesktop().browse(new URI(url));}catch(Exception ignored){}}}).start();}
 
     private final class Handler implements HttpHandler {public void handle(HttpExchange x) throws IOException {try{String path=x.getRequestURI().getPath();if(path.startsWith("/api/")){if("GET".equalsIgnoreCase(x.getRequestMethod()))apiGet(x,path);else if("POST".equalsIgnoreCase(x.getRequestMethod()))apiPost(x,path);else send(x,405,obj());}else staticFile(x,path);}catch(Exception e){Map<String,Object> o=obj();o.put("ok",false);o.put("error",e.getMessage()==null?e.toString():e.getMessage());send(x,500,o);}}}
     private void apiGet(HttpExchange x,String path) throws IOException {Map<String,Object> st=settings();if("/api/status".equals(path)){Map<String,Object> q=scanQueue(st);Map<String,Object> o=obj();o.put("ok",true);o.put("version",VERSION);o.put("mode",bool(st.get("auto_process"),true)?"monitoramento automático e arquivamento físico":"monitoramento automático desativado");o.put("settings",st);o.put("root_exists",Files.isDirectory(root(st)));o.put("inbox_exists",Files.isDirectory(inbox(st)));o.put("queue_count",((List<?>)q.get("items")).size());o.put("queue_error",q.get("error"));o.put("java",System.getProperty("java.version"));o.put("engine","Java + Apache PDFBox");o.put("monitor_running",monitorRunning);o.put("monitor_path",monitorPath);o.put("monitor_error",monitorError);o.put("last_auto_at",lastAutoAt);send(x,200,o);return;}if("/api/recent".equals(path)){Map<String,Object>o=obj();o.put("items",recentAuto());send(x,200,o);return;}if("/api/queue".equals(path)){send(x,200,scanQueue(st));return;}if("/api/rules".equals(path)){Map<String,Object>o=obj();o.put("items",engine.rules());send(x,200,o);return;}if("/api/companies".equals(path)){Map<String,Object>o=obj();o.put("items",discoverCompanies(st));send(x,200,o);return;}if("/api/history".equals(path)){Map<String,Object>o=obj();o.put("items",readHistory(100));send(x,200,o);return;}err(x,404,"API não encontrada");}
-    private void apiPost(HttpExchange x,String path) throws IOException {Map<String,Object> st=settings(),p=readJson(x);try{if("/api/settings".equals(path)){Map<String,Object>u=saveSettings(p);Object en;try{en=ensureInbox(u);}catch(Exception e){Map<String,Object>q=obj();q.put("error",e.getMessage());en=q;}restartMonitor();Map<String,Object>h=obj();h.put("type","settings");h.put("message","Configurações atualizadas; monitor da AAA reiniciado.");h.put("folder_check",en);history(h);Map<String,Object>o=obj();o.put("ok",true);o.put("settings",u);o.put("folder_check",en);o.put("monitor_running",monitorRunning);send(x,200,o);return;}if("/api/companies/preview-card".equals(path)){Map<String,Object>pre=previewCard(p,st);Map<String,Object>o=obj();o.put("ok",true);o.putAll(pre);send(x,200,o);return;}if("/api/companies/register-card".equals(path)){Map<String,Object>pre=previewCard(p,st),r=registerCard(pre,st);Map<String,Object>o=obj();o.put("ok",true);o.put("preview",pre);o.putAll(r);send(x,200,o);return;}if("/api/process".equals(path)){process(x,st);return;}err(x,404,"API não encontrada");}catch(IllegalArgumentException e){err(x,400,e.getMessage());}catch(FileNotFoundException e){err(x,400,e.getMessage());}catch(Exception e){err(x,400,e.getMessage()==null?e.toString():e.getMessage());}}
+    private void apiPost(HttpExchange x,String path) throws IOException {Map<String,Object> st=settings(),p=readJson(x);try{if("/api/settings".equals(path)){Map<String,Object>u=saveSettings(p);Object en;try{en=ensureInbox(u);}catch(Exception e){Map<String,Object>q=obj();q.put("error",e.getMessage());en=q;}restartMonitor();Map<String,Object>h=obj();h.put("type","settings");h.put("message","Configurações atualizadas; monitor da AAA reiniciado.");h.put("folder_check",en);history(h);Map<String,Object>o=obj();o.put("ok",true);o.put("settings",u);o.put("folder_check",en);o.put("monitor_running",monitorRunning);send(x,200,o);return;}if("/api/companies/preview-card".equals(path)){Map<String,Object>pre=previewCard(p,st);Map<String,Object>o=obj();o.put("ok",true);o.putAll(pre);send(x,200,o);return;}if("/api/companies/register-card".equals(path)){Map<String,Object>pre=previewCard(p,st),r=registerCompany(pre,st,"cartao_cnpj");Map<String,Object>o=obj();o.put("ok",true);o.put("preview",pre);o.putAll(r);send(x,200,o);return;}if("/api/companies/preview-api".equals(path)){
+            Map<String,Object> pre=previewApi(p,st);Map<String,Object> o=obj();o.put("ok",true);o.putAll(pre);send(x,200,o);return;
+        }
+        if("/api/companies/register-api".equals(path)){
+            Map<String,Object> r=registerApi(p,st);Map<String,Object> o=obj();o.put("ok",true);o.putAll(r);send(x,200,o);return;
+        }
+        if("/api/process".equals(path)){process(x,st);return;}err(x,404,"API não encontrada");}catch(BrasilApiClient.ApiException e){err(x,e.getStatus(),e.getMessage());}catch(IllegalArgumentException e){err(x,400,e.getMessage());}catch(FileNotFoundException e){err(x,400,e.getMessage());}catch(Exception e){err(x,400,e.getMessage()==null?e.toString():e.getMessage());}}
     private void process(HttpExchange x,Map<String,Object> st) throws Exception {sweepInbox("manual_api");Map<String,Object>o=obj();o.put("ok",true);o.put("automatic",true);o.put("items",recentAuto());o.put("note","O processamento normal é automático. Esta rota apenas força uma varredura imediata da AAA.");send(x,200,o);}
 
     private Map<String,Object> readJson(HttpExchange x) throws IOException {int len=integer(x.getRequestHeaders().getFirst("Content-length"),0);if(len>MAX_UPLOAD*2)throw new IllegalArgumentException("Requisição grande demais.");ByteArrayOutputStream b=new ByteArrayOutputStream();InputStream in=x.getRequestBody();byte[] buf=new byte[8192];int n,total=0;while((n=in.read(buf))!=-1){total+=n;if(total>MAX_UPLOAD*2)throw new IllegalArgumentException("Requisição grande demais.");b.write(buf,0,n);}String txt=new String(b.toByteArray(),StandardCharsets.UTF_8);return txt.trim().isEmpty()?obj():Json.object(txt);}
@@ -85,12 +271,5 @@ public final class GedServer {
     private String contentType(String n){n=n.toLowerCase(Locale.ROOT);if(n.endsWith(".html"))return "text/html; charset=utf-8";if(n.endsWith(".css"))return "text/css; charset=utf-8";if(n.endsWith(".js"))return "application/javascript; charset=utf-8";if(n.endsWith(".json"))return "application/json; charset=utf-8";if(n.endsWith(".svg"))return "image/svg+xml";if(n.endsWith(".png"))return "image/png";return "application/octet-stream";}
     private void err(HttpExchange x,int code,String msg) throws IOException {Map<String,Object>o=obj();o.put("ok",false);o.put("error",msg);send(x,code,o);} private void send(HttpExchange x,int code,Object o) throws IOException {byte[] raw=Json.stringify(o).getBytes(StandardCharsets.UTF_8);x.getResponseHeaders().set("Content-Type","application/json; charset=utf-8");x.getResponseHeaders().set("Cache-Control","no-store");x.sendResponseHeaders(code,raw.length);OutputStream out=x.getResponseBody();out.write(raw);out.close();}
 
-    public static void main(String[] args) throws Exception {String host="127.0.0.1";int port=8765;boolean browser=true;for(int i=0;i<args.length;i++){if("--host".equals(args[i])&&i+1<args.length)host=args[++i];else if("--port".equals(args[i])&&i+1<args.length)port=Integer.parseInt(args[++i]);else if("--no-browser".equals(args[i]))browser=false;}Path base=Paths.get(System.getProperty("ged.base", ".")).toAbsolutePath().normalize();
-        Path config=base.resolve("config");
-        Files.createDirectories(config);
-        for(String name:new String[]{"settings","companies"}){
-            Path target=config.resolve(name+".json");
-            if(!Files.exists(target))Files.copy(config.resolve(name+".example.json"),target);
-        }
-        GedServer app=new GedServer(base);app.start(host,port,browser);System.out.println("Pressione Ctrl+C para encerrar.");}
+    public static void main(String[] args) throws Exception {String host="127.0.0.1";int port=8765;boolean browser=true;for(int i=0;i<args.length;i++){if("--host".equals(args[i])&&i+1<args.length)host=args[++i];else if("--port".equals(args[i])&&i+1<args.length)port=Integer.parseInt(args[++i]);else if("--no-browser".equals(args[i]))browser=false;}Path base=Paths.get(System.getProperty("ged.base", ".")).toAbsolutePath().normalize();GedServer app=new GedServer(base);app.start(host,port,browser);System.out.println("Pressione Ctrl+C para encerrar.");}
 }

@@ -1,5 +1,5 @@
 {
-  "version": "0.0.6",
+  "version": "0.1.3",
   "root": "documentos",
   "inbox": "AAA",
   "review": "AAA\\REVISAO",
@@ -9,5 +9,6 @@
   "auto_process": true,
   "destination_category": "RELATÓRIOS",
   "create_folders": true,
-  "hash_duplicates": true
+  "hash_duplicates": true,
+  "auto_register_companies": true
 }

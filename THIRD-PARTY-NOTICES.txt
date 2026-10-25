@@ -1,4 +1,4 @@
-GED v0.0.6 - Third-party notices
+GED v0.1.2 - Third-party notices
 
 This distribution includes:
 - Apache PDFBox 1.8.16
@@ -13,3 +13,8 @@ See LUCIDE-LICENSE.txt.
 
 Note: PDFBox is bundled locally so the workstation needs only a compatible Java runtime;
 no Maven, Gradle, Python or internet connection is required to run the GED.
+
+BrasilAPI — servico comunitario externo para consulta de CNPJ
+URL: https://brasilapi.com.br/
+Repositorio e documentacao: https://github.com/BrasilAPI/BrasilAPI
+O GED acessa a API publica no momento da consulta. Nenhum codigo da BrasilAPI e incorporado ou redistribuido no projeto.

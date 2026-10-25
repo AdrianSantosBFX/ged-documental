@@ -46,10 +46,10 @@ public final class RecognitionEngine {
 
     private List<String> detectedCnpjs(String text){
         LinkedHashSet<String> out=new LinkedHashSet<String>();
-        Matcher m=Pattern.compile("(?<!\\d)(\\d{2})[.]?(\\d{3})[.]?(\\d{3})[/]?(\\d{4})[-]?(\\d{2})(?!\\d)").matcher(text==null?"":text);
+        Matcher m=Pattern.compile("(?<![A-Z0-9])([A-Z0-9]{2})[.]?([A-Z0-9]{3})[.]?([A-Z0-9]{3})[/]?([A-Z0-9]{4})[-]?([0-9]{2})(?![A-Z0-9])").matcher(text==null?"":text.toUpperCase(Locale.ROOT));
         while(m.find()){
-            String c=CompanyCardParser.formatCnpj(m.group(1)+m.group(2)+m.group(3)+m.group(4)+m.group(5));
-            if(CompanyCardParser.validCnpj(c))out.add(c);
+            String c=BrasilApiClient.formatCnpj(m.group(1)+m.group(2)+m.group(3)+m.group(4)+m.group(5));
+            if(BrasilApiClient.validCnpj(c))out.add(c);
         }
         return new ArrayList<String>(out);
     }
@@ -63,7 +63,11 @@ public final class RecognitionEngine {
         Map<String,Object> best=null;int bestPos=Integer.MAX_VALUE;
         for(Map<String,Object> c:registered){
             String cnpj=str(c.get("cnpj"));int p=nt.indexOf(PdfEngine.normalize(cnpj));
-            if(p<0){String d=PdfEngine.digits(cnpj);String nd=PdfEngine.digits(nt);p=nd.indexOf(d);}
+            String canonical=BrasilApiClient.normalizeCnpj(cnpj);
+            if(p<0&&canonical.matches("[0-9]{14}")){
+                String d=PdfEngine.digits(cnpj);String nd=PdfEngine.digits(nt);p=nd.indexOf(d);
+            }
+            if(p<0&&detected.contains(BrasilApiClient.formatCnpj(cnpj)))p=0;
             if(p>=0&&p<bestPos){best=c;bestPos=p;}
         }
         if(best!=null)return choice(best,"CNPJ cadastrado encontrado no documento",100,detected);
@@ -81,7 +85,7 @@ public final class RecognitionEngine {
                 else if(nf.contains(a))return choice(c,"alias cadastrado no nome do arquivo",88,detected);
             }
         }
-        String src=detected.isEmpty()?"empresa não identificada":"CNPJ detectado, mas empresa não cadastrada por Cartão CNPJ";
+        String src=detected.isEmpty()?"empresa não identificada":"CNPJ detectado, mas empresa não cadastrada no Elevar GED";
         return choice(null,src,0,detected);
     }
     private Map<String,Object> choice(Map<String,Object> c,String src,int conf,List<String> detected){Map<String,Object> o=obj();o.put("company",c);o.put("source",src);o.put("confidence",conf);o.put("detected_cnpjs",detected);return o;}
@@ -151,7 +155,7 @@ public final class RecognitionEngine {
         Map<String,Object> result=obj();result.put("name",path.getFileName().toString());result.put("path",path.toString());
         try{result.put("size",Files.size(path));}catch(Exception e){result.put("size",0);}
         String name=path.getFileName().toString();String ext=name.lastIndexOf('.')>=0?name.substring(name.lastIndexOf('.')).toLowerCase(Locale.ROOT):"";result.put("extension",ext);result.put("status","error");result.put("error",null);
-        if(!".pdf".equals(ext)){result.put("status","review");result.put("error","Formato ainda fora do escopo da v0.0.6. Nesta etapa o GED processa apenas PDFs da categoria RELATÓRIOS.");return result;}
+        if(!".pdf".equals(ext)){result.put("status","review");result.put("error","Formato ainda fora do escopo da v0.1.3. Nesta etapa o Elevar GED processa apenas PDFs da categoria RELATÓRIOS.");return result;}
         try{
             PdfEngine.PdfData pd=PdfEngine.extract(path);String text=pd.text;result.put("hash",PdfEngine.sha256(path));result.put("text_chars",text.trim().length());result.put("metadata",pd.metadata);
             Map<String,Object> cl=classify(text,name,str(pd.metadata.get("title")),rules);Map<String,Object> ch=chooseCompany(text,name,companies);Map<String,Object> company=(Map<String,Object>)ch.get("company");Map<String,Object> rule=cl==null?null:(Map<String,Object>)cl.get("rule");Map<String,Object> co=competence(text,name,rule==null?null:str(rule.get("id")));
@@ -166,12 +170,12 @@ public final class RecognitionEngine {
             } else if(rule!=null||company!=null||!cv.isEmpty()){
                 result.put("status","review");
                 if(rule==null)result.put("review_reason","tipo documental não reconhecido");
-                else if(company==null)result.put("review_reason","empresa não cadastrada por Cartão CNPJ");
+                else if(company==null)result.put("review_reason","empresa não cadastrada no Elevar GED");
                 else if(cv.isEmpty())result.put("review_reason","competência não identificada");
             } else {
                 result.put("status","unconfigured");result.put("review_reason","documento ainda não parametrizado");
             }
-            if(text.trim().isEmpty())result.put("notice","PDF sem camada de texto; classificação limitada a metadados/nome do arquivo. O GED não arquiva automaticamente sem confiança suficiente.");
+            if(text.trim().isEmpty())result.put("notice","PDF sem camada de texto; classificação limitada a metadados/nome do arquivo. O Elevar GED não arquiva automaticamente sem confiança suficiente.");
         }catch(Exception e){result.put("status","error");result.put("error",e.getClass().getSimpleName()+": "+e.getMessage());}
         return result;
     }

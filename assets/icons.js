@@ -1,5 +1,5 @@
 /*
-  Local SVG icon subset for GED v0.0.6.
+  Local SVG icon subset for Elevar GED v0.1.3.
   Visual system selected: Lucide Icons (ISC). The subset is embedded locally so the
   prototype remains usable offline and does not depend on a CDN.
 */

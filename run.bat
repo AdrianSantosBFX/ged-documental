@@ -30,19 +30,19 @@ if not defined JAVA_CMD (
 
 if not defined JAVA_CMD (
   echo ================================================================
-  echo  GED v0.0.6 - Java nao encontrado
+  echo  Elevar GED v0.1.3 - Java nao encontrado
   echo ================================================================
-  echo O GED procurou o Java no JAVA_HOME, PATH e pastas comuns.
+  echo O Elevar GED procurou o Java no JAVA_HOME, PATH e pastas comuns.
   echo Nenhuma instalacao foi localizada para este usuario.
   echo.
-  echo O GED nao instala nada e nao requer privilegios de administrador.
+  echo O Elevar GED nao instala nada e nao requer privilegios de administrador.
   echo ================================================================
   pause
   exit /b 1
 )
 
 echo ================================================================
-echo  GED v0.0.6 - Java Engine
+echo  Elevar GED v0.1.3 - Java Engine
 echo ================================================================
 echo Java localizado em:
 echo %JAVA_CMD%
@@ -55,8 +55,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Iniciando GED...
-"%JAVA_CMD%" -Dfile.encoding=UTF-8 -Dged.base="%CD%" -jar ged-server.jar
+echo Iniciando Elevar GED...
+"%JAVA_CMD%" -Dfile.encoding=UTF-8 -Dged.base="%CD%" -jar elevar-ged.jar
 if errorlevel 1 (
   echo.
   echo [ERRO] O motor Java foi encerrado com falha.

@@ -15,8 +15,8 @@
     busy: false,
     status: null,
     settings: {
-      root: 'documentos', inbox:'AAA', review:'AAA\\REVISAO', errors:'AAA\\ERROS', threshold:95,
-      destination_category:'RELATÓRIOS', create_folders:true, hash_duplicates:true, simulation:false, auto_process:true
+      root: 'C:\\Users\\adriansantos\\Documents\\Servidor Exemplo', inbox:'AAA', review:'AAA\\REVISAO', errors:'AAA\\ERROS', threshold:95,
+      destination_category:'RELATÓRIOS', create_folders:true, hash_duplicates:true, simulation:false, auto_process:true, auto_register_companies:true
     },
     queue: [],
     results: [],
@@ -25,6 +25,7 @@
     history: [],
     queueError: null,
     companyRegistration: {file:null, base64:null, preview:null, busy:false},
+    apiRegistration: {cnpj:'', preview:null, busy:false, error:null},
   };
 
   const pageNames = {dashboard:'Visão geral',inbox:'Caixa de entrada',review:'Revisão',companies:'Empresas',rules:'Regras',history:'Histórico',settings:'Configurações'};
@@ -93,10 +94,10 @@
         ${stat('Erros / não parametrizados',c.error+c.unconfigured,'Sem reconhecimento seguro','triangle-alert','red')}
       </div>
       <div class="grid-main">
-        <div class="panel"><div class="panel__header"><div><div class="panel__title">Pipeline ativo</div><div class="panel__subtitle">A v0.0.6 monitora a AAA e arquiva relatórios de empresas cadastradas automaticamente</div></div><span class="badge badge--blue">v0.0.6 • Auto</span></div><div class="panel__body"><div class="pipeline">
+        <div class="panel"><div class="panel__header"><div><div class="panel__title">Pipeline ativo</div><div class="panel__subtitle">A v0.1.3 monitora a AAA, cadastra empresas desconhecidas pela BrasilAPI e arquiva relatórios reconhecidos</div></div><span class="badge badge--blue">v0.1.3 • Auto</span></div><div class="panel__body"><div class="pipeline">
           <div class="pipeline__step"><span class="pipeline__num">01</span><strong>Ler PDF</strong><small>Extração da camada de texto pelo motor Java local.</small></div>
           <div class="pipeline__step"><span class="pipeline__num">02</span><strong>Reconhecer</strong><small>${state.rules.length||12} regras documentais parametrizadas.</small></div>
-          <div class="pipeline__step"><span class="pipeline__num">03</span><strong>Identificar</strong><small>CNPJ, empresa e competência.</small></div>
+          <div class="pipeline__step"><span class="pipeline__num">03</span><strong>Identificar</strong><small>CNPJ e competência; se necessário, cadastra a empresa pela BrasilAPI.</small></div>
           <div class="pipeline__step"><span class="pipeline__num">04</span><strong>Renomear</strong><small>Gera o nome padronizado proposto.</small></div>
           <div class="pipeline__step"><span class="pipeline__num">05</span><strong>Realocar</strong><small>Cria a estrutura ausente e move o arquivo automaticamente.</small></div>
         </div></div></div>
@@ -144,7 +145,7 @@
     return `<div class="page">
       <div class="page-header"><div class="page-title"><h1>Caixa de entrada</h1><p>Arquivos lidos diretamente de <strong>${esc(state.settings.root)}\\${esc(state.settings.inbox)}</strong>.</p></div><div class="page-actions"><span class="badge badge--${state.status?.monitor_running?'success':'warning'}">${I(state.status?.monitor_running?'activity':'triangle-alert')} ${state.status?.monitor_running?'Monitorando AAA':'Monitor inativo'}</span><button class="btn btn--secondary" id="scanInbox" ${!state.online||state.busy?'disabled':''}>${I('refresh-cw')} Atualizar tela</button></div></div>
       ${engineOfflineNotice()}${rootNotice()}
-      <div class="inbox-banner"><div class="inbox-banner__icon">${I('folder-input')}</div><div><strong>Fluxo automático da v0.0.6</strong><p>Jogue um PDF de relatório diretamente na AAA. Assim que a cópia terminar, o GED reconhece documento, empresa e competência, cria a estrutura necessária, renomeia e move o arquivo para RELATÓRIOS. Itens inseguros são segregados em REVISÃO e falhas técnicas em ERROS.</p></div><span class="badge badge--success">AUTOMÁTICO</span></div>
+      <div class="inbox-banner"><div class="inbox-banner__icon">${I('folder-input')}</div><div><strong>Fluxo automático da v0.1.3</strong><p>Jogue um PDF de relatório diretamente na AAA. Assim que a cópia terminar, o Elevar GED reconhece documento, empresa e competência, cria a estrutura necessária, renomeia e move o arquivo para RELATÓRIOS. Itens inseguros são segregados em REVISÃO e falhas técnicas em ERROS.</p></div><span class="badge badge--success">AUTOMÁTICO</span></div>
       ${state.status?.monitor_error?`<div class="notice notice--danger">${I('triangle-alert')}<div><strong>Monitor da AAA:</strong><br>${esc(state.status.monitor_error)}</div></div>`:''}
       ${state.queueError?`<div class="notice notice--danger">${I('triangle-alert')}<div><strong>Não foi possível ler AAA.</strong><br>${esc(state.queueError)}</div></div>`:''}
       <div class="panel"><div class="panel__header"><div><div class="panel__title">Arquivos aguardando na AAA</div><div class="panel__subtitle">Normalmente esta fila fica vazia porque o processamento é automático</div></div><span class="table-count">${state.queue.length} arquivo(s)</span></div><div class="panel__body panel__body--flush"><div class="table-wrap"><table class="table"><thead><tr><th style="width:29%">Arquivo</th><th>Status</th><th>Documento</th><th>Empresa</th><th>Competência</th><th>Confiança</th><th style="width:54px"></th></tr></thead><tbody>${fileRows(state.queue,true)}</tbody></table></div></div></div>
@@ -156,7 +157,7 @@
     const reviewItems=state.results.filter(r=>r.archive_action==='review'||r.status==='review'||r.status==='unconfigured');
     return `<div class="page"><div class="page-header"><div class="page-title"><h1>Revisão</h1><p>Documentos que o monitor retirou da AAA, mas não pôde arquivar com segurança.</p></div></div>
       <div class="notice">${I('circle-info')}<div><strong>Regra de segurança:</strong> documentos abaixo de ${esc(state.settings.threshold)}% de confiança, não parametrizados ou com colisão de nome são movidos para <code>${esc(state.settings.review||'AAA\\REVISAO')}</code>. Eles nunca são enviados automaticamente para a pasta da empresa.</div></div>
-      <div class="panel"><div class="panel__body panel__body--flush">${reviewItems.length?`<div class="review-list">${reviewItems.map(reviewCard).join('')}</div>`:`<div class="empty"><div class="empty__icon">${I('circle-check')}</div><h3>Nenhuma revisão recente</h3><p>O monitor continuará acompanhando a AAA em segundo plano enquanto o GED estiver aberto.</p></div>`}</div></div>
+      <div class="panel"><div class="panel__body panel__body--flush">${reviewItems.length?`<div class="review-list">${reviewItems.map(reviewCard).join('')}</div>`:`<div class="empty"><div class="empty__icon">${I('circle-check')}</div><h3>Nenhuma revisão recente</h3><p>O monitor continuará acompanhando a AAA em segundo plano enquanto o Elevar GED estiver aberto.</p></div>`}</div></div>
     </div>`;
   }
 
@@ -166,19 +167,19 @@
   }
 
   function companiesPage(){
-    return `<div class="page"><div class="page-header"><div class="page-title"><h1>Empresas</h1><p>Cadastro mestre por Cartão CNPJ. Somente empresas cadastradas aqui podem receber documentos automaticamente.</p></div><div class="page-actions"><button class="btn btn--secondary" id="reloadCompanies" ${!state.online?'disabled':''}>${I('refresh-cw')} Atualizar</button><button class="btn btn--primary" id="registerCompany" ${!state.online||!state.status?.root_exists?'disabled':''}>${I('building-2')} Cadastrar por Cartão CNPJ</button></div></div>
-      <div class="notice">${I('circle-info')}<div><strong>Cartão CNPJ é a porta de entrada da empresa.</strong> O GED extrai CNPJ e razão social, registra a empresa e cria sua pasta na raiz. Pastas soltas no servidor não são consideradas empresas cadastradas.</div></div>
+    return `<div class="page"><div class="page-header"><div class="page-title"><h1>Empresas</h1><p>Cadastre empresas pelo Cartão CNPJ em PDF ou consulte pelo número na BrasilAPI.</p></div><div class="page-actions"><button class="btn btn--secondary" id="reloadCompanies" ${!state.online?'disabled':''}>${I('refresh-cw')} Atualizar</button><button class="btn btn--secondary" id="registerCompany" ${!state.online||!state.status?.root_exists?'disabled':''}>${I('file-text')} Importar Cartão CNPJ</button><button class="btn btn--primary" id="registerCompanyApi" ${!state.online||!state.status?.root_exists?'disabled':''}>${I('search')} Consultar CNPJ (API)</button></div></div>
+      <div class="notice">${I('circle-info')}<div><strong>Dois métodos, um cadastro mestre.</strong> A consulta BrasilAPI requer internet e deve ser conferida antes de salvar. A importação pelo cartão PDF continua disponível. Somente empresas confirmadas neste cadastro podem receber documentos automaticamente.</div></div>
       <div class="toolbar"><div class="searchbox">${I('search')}<input id="companySearch" placeholder="Pesquisar empresa ou CNPJ..." /></div><div class="toolbar__spacer"></div><span class="table-count"><strong>${state.companies.length}</strong> empresa(s) cadastrada(s)</span></div>
-      <div class="panel"><div class="panel__body panel__body--flush"><div class="table-wrap"><table class="table"><thead><tr><th>Empresa / pasta</th><th>CNPJ</th><th>Vínculo</th><th>Estrutura</th></tr></thead><tbody id="companyRows">${companyRows(state.companies)}</tbody></table></div></div></div>
+      <div class="panel"><div class="panel__body panel__body--flush"><div class="table-wrap"><table class="table"><thead><tr><th>Empresa / pasta</th><th>CNPJ</th><th>Origem</th><th>Vínculo</th><th>Estrutura</th></tr></thead><tbody id="companyRows">${companyRows(state.companies)}</tbody></table></div></div></div>
     </div>`;
   }
   function companyRows(list){
-    if(!list.length)return `<tr><td colspan="4"><div class="empty"><p>Nenhuma empresa cadastrada. Use “Cadastrar por Cartão CNPJ” para criar a primeira.</p></div></td></tr>`;
-    return list.map(c=>`<tr><td><div class="company-name"><span class="company-avatar">${esc(initials(c.folder))}</span><strong>${esc(c.folder)}</strong></div></td><td class="mono ${c.cnpj?'':'muted'}">${esc(c.cnpj||'Pendente')}</td><td>${c.parametrized?'<span class="badge badge--success">CNPJ ativo</span>':'<span class="badge badge--waiting">Cadastro incompleto</span>'}</td><td>${c.exists?'<span class="badge badge--success">Encontrada</span>':'<span class="badge badge--waiting">Configuração</span>'}</td></tr>`).join('');
+    if(!list.length)return `<tr><td colspan="5"><div class="empty"><p>Nenhuma empresa cadastrada. Importe um Cartão CNPJ ou consulte a BrasilAPI para começar.</p></div></td></tr>`;
+    return list.map(c=>`<tr><td><div class="company-name"><span class="company-avatar">${esc(initials(c.folder))}</span><strong>${esc(c.folder)}</strong></div></td><td class="mono ${c.cnpj?'':'muted'}">${esc(c.cnpj||'Pendente')}</td><td><span class="badge badge--blue">${c.source==='brasilapi_auto'?'BrasilAPI • Auto':c.source==='brasilapi'?'BrasilAPI':c.source==='cartao_cnpj'?'Cartão PDF':'Legado'}</span></td><td>${c.parametrized?'<span class="badge badge--success">Cadastrada</span>':'<span class="badge badge--waiting">Cadastro incompleto</span>'}</td><td>${c.exists?'<span class="badge badge--success">Encontrada</span>':'<span class="badge badge--waiting">Configuração</span>'}</td></tr>`).join('');
   }
 
   function rulesPage(){
-    return `<div class="page"><div class="page-header"><div class="page-title"><h1>Regras e reconhecedores</h1><p>Parametrizações ativas utilizadas pelo motor documental da v0.0.6.</p></div></div>
+    return `<div class="page"><div class="page-header"><div class="page-title"><h1>Regras e reconhecedores</h1><p>Parametrizações ativas utilizadas pelo motor documental da v0.1.3.</p></div></div>
       <div class="notice">${I('circle-info')}<div><strong>${state.rules.length} reconhecedores ativos.</strong> Nesta etapa todos os documentos parametrizados são propostos para a subpasta <strong>RELATÓRIOS</strong>. As regras ainda são editadas nos arquivos de configuração do projeto.</div></div>
       <div class="panel"><div class="panel__header"><div><div class="panel__title">Catálogo documental</div><div class="panel__subtitle">Assinaturas textuais, nome de saída e prioridade</div></div></div><div class="panel__body panel__body--flush">${state.rules.length?state.rules.map(ruleCard).join(''):`<div class="empty"><p>Motor não conectado ou regras não carregadas.</p></div>`}</div></div>
     </div>`;
@@ -203,17 +204,18 @@
     const s=state.settings;
     return `<div class="page"><div class="page-header"><div class="page-title"><h1>Configurações</h1><p>Parâmetros consumidos diretamente pelo motor local.</p></div></div>${engineOfflineNotice()}
       <div class="settings-grid"><div class="panel"><div class="panel__header"><div><div class="panel__title">Servidor e processamento</div><div class="panel__subtitle">Salvo em config/settings.json</div></div></div><div class="panel__body"><form id="settingsForm" class="form">
-        <div class="field"><label>Pasta raiz</label><input class="input" name="root" value="${esc(s.root)}" /><small>Informe a pasta raiz dos documentos (padrão: documentos).</small></div>
+        <div class="field"><label>Pasta raiz</label><input class="input" name="root" value="${esc(s.root)}" /><small>Configurada para o ambiente atual: C:\\Users\\adriansantos\\Documents\\Servidor Exemplo</small></div>
         <div class="field-row"><div class="field"><label>Pasta de entrada</label><input class="input" name="inbox" value="${esc(s.inbox||'AAA')}" /></div><div class="field"><label>Confiança mínima (%)</label><input class="input" name="threshold" type="number" min="1" max="100" value="${esc(s.threshold||95)}" /></div></div>
-        <div class="field-row"><div class="field"><label>Pasta lógica de revisão</label><input class="input" name="review" value="${esc(s.review||'AAA\\REVISAO')}" /></div><div class="field"><label>Subpasta de destino</label><input class="input" name="destination_category" value="RELATÓRIOS" disabled /><small>Escopo fixo da v0.0.6: somente PDFs classificados como RELATÓRIOS. XML, notas fiscais em PDF e arquivos SPED ainda não entram no fluxo automático.</small></div></div>
+        <div class="field-row"><div class="field"><label>Pasta lógica de revisão</label><input class="input" name="review" value="${esc(s.review||'AAA\\REVISAO')}" /></div><div class="field"><label>Subpasta de destino</label><input class="input" name="destination_category" value="RELATÓRIOS" disabled /><small>Escopo fixo da v0.1.3: somente PDFs classificados como RELATÓRIOS. XML, notas fiscais em PDF e arquivos SPED ainda não entram no fluxo automático.</small></div></div>
         <div>
           <div class="setting-line"><div class="setting-line__text"><strong>Monitoramento automático da AAA</strong><small>Quando ativo, nenhum botão de processamento é necessário: arquivos novos são tratados assim que terminam de ser copiados.</small></div><label class="switch"><input name="auto_process" type="checkbox" ${s.auto_process!==false?'checked':''}><span></span></label></div>
-          <div class="setting-line"><div class="setting-line__text"><strong>Criar pastas ausentes</strong><small>Ativo: o GED pode criar empresa, ano, competência e RELATÓRIOS quando a estrutura ainda não existir.</small></div><label class="switch"><input name="create_folders" type="checkbox" ${s.create_folders?'checked':''}><span></span></label></div>
+          <div class="setting-line"><div class="setting-line__text"><strong>Cadastrar empresas desconhecidas pela BrasilAPI</strong><small>Se o PDF contiver um único CNPJ válido e o relatório e a competência forem reconhecidos com confiança suficiente, o Elevar GED enviará apenas o CNPJ à BrasilAPI, cadastrará a empresa e criará sua pasta antes de arquivar. Documentos ambíguos vão para REVISÃO.</small></div><label class="switch"><input name="auto_register_companies" type="checkbox" ${s.auto_register_companies!==false?'checked':''}><span></span></label></div>
+          <div class="setting-line"><div class="setting-line__text"><strong>Criar pastas ausentes</strong><small>Ativo: o Elevar GED pode criar empresa, ano, competência e RELATÓRIOS quando a estrutura ainda não existir.</small></div><label class="switch"><input name="create_folders" type="checkbox" ${s.create_folders?'checked':''}><span></span></label></div>
           <div class="setting-line"><div class="setting-line__text"><strong>Detectar duplicados por SHA-256</strong><small>O motor já calcula hash durante o processamento e marca duplicados presentes na própria AAA.</small></div><label class="switch"><input name="hash_duplicates" type="checkbox" ${s.hash_duplicates?'checked':''}><span></span></label></div>
         </div>
         <div><button class="btn btn--primary" type="submit" ${!state.online?'disabled':''}>${I('save')} Salvar configurações</button></div>
       </form></div></div>
-      <div class="panel"><div class="about-card"><div class="about-logo">${I('database')}</div><h3>GED</h3><p>Gestão Eletrônica de Documentos • motor local</p><div class="about-meta"><div><span>Versão</span><strong>0.0.6</strong></div><div><span>Engine</span><strong>Java + Apache PDFBox</strong></div><div><span>Entrada</span><strong>${esc(s.inbox||'AAA')}</strong></div><div><span>Arquivos</span><strong>Automático</strong></div><div><span>Regras</span><strong>${state.rules.length}</strong></div><div><span>Admin</span><strong>Não exige</strong></div></div></div></div></div>
+      <div class="panel"><div class="about-card"><div class="about-logo">${I('database')}</div><h3>Elevar GED</h3><p>Gestão Eletrônica de Documentos • motor local</p><div class="about-meta"><div><span>Versão</span><strong>0.1.3</strong></div><div><span>Engine</span><strong>Java + Apache PDFBox</strong></div><div><span>Entrada</span><strong>${esc(s.inbox||'AAA')}</strong></div><div><span>Arquivos</span><strong>Automático</strong></div><div><span>Regras</span><strong>${state.rules.length}</strong></div><div><span>Admin</span><strong>Não exige</strong></div></div></div></div></div>
     </div>`;
   }
 
@@ -262,6 +264,64 @@
     return new Promise((resolve,reject)=>{ const reader=new FileReader(); reader.onload=()=>resolve(String(reader.result).split(',')[1]||''); reader.onerror=()=>reject(new Error('Não foi possível ler o PDF selecionado.')); reader.readAsDataURL(file); });
   }
 
+  function openApiCompanyRegistration(){
+    state.apiRegistration={cnpj:'',preview:null,busy:false,error:null};
+    renderApiCompanyRegistrationModal();
+    $('#companyCnpjInput')?.focus();
+  }
+
+  function renderApiCompanyRegistrationModal(){
+    const cr=state.apiRegistration, p=cr.preview, c=p?.card||{};
+    $('#modalRoot').innerHTML=`<div class="overlay" id="companyApiOverlay"><div class="modal modal--wide"><div class="modal__header"><div><h2>Cadastrar empresa pela BrasilAPI</h2><p>Busque os dados públicos da empresa e confirme o vínculo antes de criar a pasta</p></div><button class="close-button" id="closeApiModal">${I('x')}</button></div>
+      <div class="modal__body">
+        <form id="companyApiForm" class="api-cnpj-form"><div class="field"><label for="companyCnpjInput">CNPJ</label><input class="input" id="companyCnpjInput" type="text" autocomplete="off" spellcheck="false" maxlength="18" placeholder="00.000.000/0000-00" value="${esc(cr.cnpj)}" ${cr.busy?'disabled':''}/><small>A consulta é realizada pelo servidor Java via HTTPS; requer conexão à internet.</small></div><button class="btn btn--primary" type="submit" ${cr.busy?'disabled':''}>${I('search')} ${cr.busy?'Consultando...':p?'Consultar novamente':'Consultar CNPJ'}</button></form>
+        ${cr.error?`<div class="notice notice--danger">${I('triangle-alert')}<div>${esc(cr.error)}</div></div>`:''}
+        ${p?`<div class="company-preview-head"><div><span class="badge badge--blue">Consulta concluída</span> <strong>${esc(c.legal_name||'—')}</strong><small>${esc(c.cnpj||'—')}${c.trade_name?` • ${esc(c.trade_name)}`:''}</small></div><span class="badge ${c.status==='ATIVA'?'badge--success':'badge--warning'}">${esc(c.status||'—')}</span></div>
+          <div class="diagnostic-grid company-card-grid">
+            <div class="diagnostic"><span>Razão social</span><strong>${esc(c.legal_name||'—')}</strong><small>Pasta proposta: ${esc(c.folder||'—')}</small></div>
+            <div class="diagnostic"><span>CNPJ</span><strong>${esc(c.cnpj||'—')}</strong><small>Identificador do cadastro</small></div>
+            <div class="diagnostic"><span>Nome fantasia</span><strong>${esc(c.trade_name||'Não informado')}</strong><small>${esc(c.main_activity||'CNAE não informado')}</small></div>
+            <div class="diagnostic"><span>Município / UF</span><strong>${esc([c.municipality,c.uf].filter(Boolean).join(' / ')||'—')}</strong><small>${esc(c.natureza_juridica||'Natureza jurídica não informada')}</small></div>
+            <div class="diagnostic"><span>Simples Nacional</span><strong>${c.opcao_pelo_simples===true?'Sim':c.opcao_pelo_simples===false?'Não':'Não informado'}</strong><small>Informação cadastral da API; não define Lucro Real ou Presumido</small></div>
+            <div class="diagnostic"><span>Data da consulta</span><strong>${esc(c.consulted_at?.replace('T',' ')||'—')}</strong><small>Fonte: BrasilAPI (serviço de terceiros)</small></div>
+          </div>
+          <div class="result-section"><span>Pasta vinculada</span><code>${esc(p.folder_path||'—')}</code></div>
+          ${p.existing_company?`<div class="notice">${I('circle-info')}<div><strong>Empresa já cadastrada.</strong> A confirmação utilizará a pasta atual, sem sobrescrever os dados existentes ou criar um segundo cadastro.</div></div>`:`<div class="notice notice--success">${I('circle-check')}<div><strong>Novo cadastro.</strong> A confirmação salvará os dados em <code>config/companies.json</code> e criará apenas a pasta da empresa, caso não exista.</div></div>`}
+          <div class="notice">${I('circle-info')}<div>Os dados da BrasilAPI podem estar desatualizados em relação ao cadastro oficial da Receita Federal. Confira razão social, CNPJ e situação antes de confirmar.</div></div>
+        `:''}
+      </div><div class="modal__footer"><span class="modal-note">Consulta sem custo de chave/API, sujeita a disponibilidade e limites do serviço de terceiros. A raiz configurada deve existir.</span><button class="btn btn--secondary" id="switchToPdf">${I('file-text')} Usar PDF</button><button class="btn btn--secondary" id="cancelApiModal">Cancelar</button>${p?`<button class="btn btn--primary" id="confirmApiCompany" ${!p.can_register||cr.busy?'disabled':''}>${I('building-2')} ${p.existing_company?'Confirmar vínculo':'Cadastrar empresa'}</button>`:''}</div></div></div>`;
+    window.GEDIcons.render($('#modalRoot'));
+    $('#closeApiModal')?.addEventListener('click',closeModal);
+    $('#cancelApiModal')?.addEventListener('click',closeModal);
+    $('#companyApiOverlay')?.addEventListener('click',e=>{if(e.target.id==='companyApiOverlay')closeModal();});
+    $('#switchToPdf')?.addEventListener('click',openCompanyRegistration);
+    $('#companyApiForm')?.addEventListener('submit',e=>{e.preventDefault();consultCompanyApi();});
+    $('#companyCnpjInput')?.addEventListener('input',e=>{
+      if(state.apiRegistration.cnpj!==e.target.value){state.apiRegistration.cnpj=e.target.value;state.apiRegistration.preview=null;const b=$('#confirmApiCompany');if(b)b.disabled=true;}
+    });
+    $('#confirmApiCompany')?.addEventListener('click',confirmApiCompanyRegistration);
+  }
+
+  async function consultCompanyApi(){
+    const cr=state.apiRegistration;cr.busy=true;cr.error=null;cr.preview=null;
+    renderApiCompanyRegistrationModal();
+    try{
+      const payload={cnpj:cr.cnpj};
+      cr.preview=await api('companies/preview-api',{method:'POST',body:JSON.stringify(payload)});
+    }catch(err){cr.error=err.message;toast('Falha na consulta à BrasilAPI',err.message,'triangle-alert');}
+    finally{cr.busy=false;renderApiCompanyRegistrationModal();}
+  }
+
+  async function confirmApiCompanyRegistration(){
+    const cr=state.apiRegistration, preview=cr.preview;if(!preview||cr.busy)return;
+    cr.busy=true;cr.error=null;renderApiCompanyRegistrationModal();
+    try{
+      const data=await api('companies/register-api',{method:'POST',body:JSON.stringify({cnpj:preview.card.cnpj,preview_token:preview.preview_token})});
+      await Promise.all([loadCompanies(),loadHistory()]);closeModal();render();
+      toast(data.already_registered?'Empresa já cadastrada':'Empresa cadastrada pela BrasilAPI',data.folder_created?'A pasta foi criada na raiz.':'O vínculo está registrado e a pasta já existia.','circle-check');
+    }catch(err){cr.error=err.message;toast('Cadastro não concluído',err.message,'triangle-alert');cr.busy=false;renderApiCompanyRegistrationModal();}
+  }
+
   function openCompanyRegistration(){
     state.companyRegistration={file:null,base64:null,preview:null,busy:false};
     renderCompanyRegistrationModal();
@@ -282,7 +342,7 @@
           <div class="diagnostic"><span>Localização</span><strong>${esc([card.municipality,card.uf].filter(Boolean).join(' / ')||'—')}</strong><small>Extraído do cartão</small></div>
         </div>
         <div class="result-section"><span>Pasta da empresa</span><code>${esc(p.folder_path||'—')}</code></div>
-        ${p.existing_company?`<div class="notice">${I('circle-info')}<div><strong>Este CNPJ já está cadastrado.</strong> Confirmar apenas garante que a pasta vinculada exista; o GED não cria uma duplicata.</div></div>`:`<div class="notice notice--success">${I('circle-check')}<div><strong>Novo cadastro.</strong> Ao confirmar, o vínculo será salvo em <code>config/companies.json</code> e a pasta será criada na raiz se necessário.</div></div>`}
+        ${p.existing_company?`<div class="notice">${I('circle-info')}<div><strong>Este CNPJ já está cadastrado.</strong> Confirmar apenas garante que a pasta vinculada exista; o Elevar GED não cria uma duplicata.</div></div>`:`<div class="notice notice--success">${I('circle-check')}<div><strong>Novo cadastro.</strong> Ao confirmar, o vínculo será salvo em <code>config/companies.json</code> e a pasta será criada na raiz se necessário.</div></div>`}
       `:''}
     </div><div class="modal__footer"><span class="modal-note">A raiz do Servidor Exemplo nunca é criada automaticamente; ela precisa existir.</span><button class="btn btn--secondary" id="cancelCompanyModal">Cancelar</button>${p?`<button class="btn btn--secondary" id="reanalyzeCompany" ${cr.busy?'disabled':''}>${I('refresh-cw')} Ler novamente</button><button class="btn btn--primary" id="confirmCompanyRegistration" ${!p.can_register||cr.busy?'disabled':''}>${I('building-2')} ${p.existing_company?'Confirmar vínculo':'Cadastrar empresa'}</button>`:`<button class="btn btn--primary" id="analyzeCompanyCard" ${!cr.file||cr.busy?'disabled':''}>${I('scan-line')} ${cr.busy?'Lendo...':'Ler cartão'}</button>`}</div></div></div>`;
     window.GEDIcons.render($('#modalRoot')); bindCompanyRegistrationModal();
@@ -317,6 +377,7 @@
       ${r.notice?`<div class="notice">${I('triangle-alert')}<div>${esc(r.notice)}</div></div>`:''}
       ${r.duplicate_in_inbox?`<div class="notice notice--danger">${I('triangle-alert')}<div><strong>Possível duplicado:</strong> outro arquivo da AAA possui o mesmo SHA-256.</div></div>`:''}
       ${r.review_reason?`<div class="notice">${I('circle-info')}<div><strong>Motivo da revisão:</strong> ${esc(r.review_reason)}</div></div>`:''}
+      ${r.auto_registration?`<div class="notice ${r.auto_registration.status==='created'?'notice--success':''}">${I(r.auto_registration.status==='created'?'circle-check':'circle-info')}<div><strong>Cadastro automático:</strong> ${esc(({created:'Empresa cadastrada via BrasilAPI',existing:'Empresa previamente registrada',skipped:'Cadastro evitado por segurança',failed:'Consulta ou cadastro não concluído'})[r.auto_registration.status]||r.auto_registration.status)}${r.auto_registration.reason?` • ${esc(r.auto_registration.reason)}`:''}</div></div>`:''}
       <div class="diagnostic-grid">
         <div class="diagnostic"><span>Documento</span><strong>${esc(doc.name||'Não reconhecido')}</strong><small>${esc(doc.source||'—')} • ${esc(doc.confidence||0)}%</small></div>
         <div class="diagnostic"><span>Empresa</span><strong>${esc(company.folder||'Não cadastrada')}</strong><small>${esc(company.cnpj||((company.detected_cnpjs||[]).join(', ')||'CNPJ não detectado'))} • ${esc(company.source||'—')}</small></div>
@@ -329,7 +390,7 @@
       <div class="result-section"><span>Estrutura de pastas</span><code>${r.folder_structure?.ensured?(r.folder_structure.created?.length?`Criada/expandida: ${esc(r.folder_structure.created.join(' • '))}`:'Já existia e foi confirmada'):(r.folder_structure?.error?`Erro: ${esc(r.folder_structure.error)}`:'Não criada para este status')}</code></div>
       <div class="result-section"><span>SHA-256</span><code class="hash-code">${esc(r.hash||'—')}</code></div>
       ${doc.signatures?.length?`<div class="result-section"><span>Assinaturas encontradas</span><div class="signature-list">${doc.signatures.map(s=>`<code>${esc(s)}</code>`).join('')}</div></div>`:''}
-    </div><div class="modal__footer"><span class="modal-note">v0.0.6 só arquiva automaticamente quando documento, competência e empresa cadastrada atingem a confiança mínima. Itens inseguros são desviados para REVISÃO/ERROS.</span><button class="btn btn--secondary" id="closeModalFooter">Fechar</button></div></div></div>`;
+    </div><div class="modal__footer"><span class="modal-note">v0.1.3 cadastra automaticamente empresas desconhecidas com CNPJ único e documento reconhecido; múltiplos CNPJs ou baixa confiança exigem revisão. Itens inseguros são desviados para REVISÃO/ERROS.</span><button class="btn btn--secondary" id="closeModalFooter">Fechar</button></div></div></div>`;
     window.GEDIcons.render($('#modalRoot'));
     $('#closeModal').onclick=closeModal; $('#closeModalFooter').onclick=closeModal; $('#modalOverlay').onclick=e=>{if(e.target.id==='modalOverlay')closeModal();};
   }
@@ -344,10 +405,11 @@
     const cs=$('#companySearch'); if(cs)cs.addEventListener('input',()=>{$('#companyRows').innerHTML=companyRows(state.companies.filter(c=>c.folder.toLowerCase().includes(cs.value.toLowerCase())||(c.cnpj||'').includes(cs.value)));});
     const rc=$('#reloadCompanies'); if(rc)rc.addEventListener('click',async()=>{await loadCompanies();render();toast('Empresas atualizadas',`${state.companies.length} pasta(s) considerada(s).`,'scan-line');});
     const reg=$('#registerCompany'); if(reg)reg.addEventListener('click',openCompanyRegistration);
+    const regApi=$('#registerCompanyApi'); if(regApi)regApi.addEventListener('click',openApiCompanyRegistration);
     const rh=$('#reloadHistory'); if(rh)rh.addEventListener('click',async()=>{await loadHistory();render();});
     const sf=$('#settingsForm'); if(sf)sf.addEventListener('submit',async e=>{
       e.preventDefault(); const f=e.currentTarget;
-      const payload={root:f.root.value,inbox:f.inbox.value,review:f.review.value,threshold:Number(f.threshold.value)||95,create_folders:f.create_folders.checked,hash_duplicates:f.hash_duplicates.checked,auto_process:f.auto_process.checked,simulation:false};
+      const payload={root:f.root.value,inbox:f.inbox.value,review:f.review.value,threshold:Number(f.threshold.value)||95,create_folders:f.create_folders.checked,hash_duplicates:f.hash_duplicates.checked,auto_process:f.auto_process.checked,auto_register_companies:f.auto_register_companies.checked,simulation:false};
       try{const data=await api('settings',{method:'POST',body:JSON.stringify(payload)});state.settings=data.settings;await loadStatus();await Promise.all([loadQueue(),loadCompanies(),loadHistory()]);render();toast('Configurações salvas','O motor já está usando os novos parâmetros.','circle-check');}
       catch(err){toast('Não foi possível salvar',err.message,'triangle-alert');}
     });

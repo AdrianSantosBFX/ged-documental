@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="GED v0.0.6 — cadastro por Cartão CNPJ, monitoramento da AAA e arquivamento automático por competência." />
-  <title>GED • v0.0.6</title>
+  <meta name="description" content="Elevar GED v0.1.3 — cadastro por Cartão CNPJ ou BrasilAPI, monitoramento da AAA e arquivamento automático por competência." />
+  <title>Elevar GED • v0.1.3</title>
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
@@ -12,7 +12,7 @@
     <aside id="sidebar" class="sidebar">
       <div class="brand">
         <div class="brand__mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div class="brand__text"><strong>GED</strong><small>Documentos inteligentes</small></div>
+        <div class="brand__text"><strong>Elevar GED</strong><small>Documentos inteligentes</small></div>
       </div>
 
       <nav class="nav" aria-label="Navegação principal">
@@ -33,7 +33,7 @@
       <div class="sidebar__footer">
         <div class="version-card">
           <div class="version-card__icon"><span data-icon="shield-check"></span></div>
-          <div class="version-card__text"><strong>v0.0.6 • Motor local</strong><small>Cartão CNPJ • AAA automática • pastas por competência</small></div>
+          <div class="version-card__text"><strong>v0.1.3 • Motor local</strong><small>Cadastro automático • BrasilAPI • AAA monitorada</small></div>
         </div>
         <button id="collapseSidebar" class="sidebar__collapse" title="Recolher barra lateral"><span data-icon="panel-left-close"></span><span class="nav__label">Recolher menu</span></button>
       </div>
@@ -41,10 +41,10 @@
 
     <main class="shell">
       <header class="topbar">
-        <div class="topbar__left"><div class="breadcrumb"><span>GED</span><span data-icon="chevron-right"></span><strong id="breadcrumbCurrent">Visão geral</strong></div></div>
+        <div class="topbar__left"><div class="breadcrumb"><span>Elevar GED</span><span data-icon="chevron-right"></span><strong id="breadcrumbCurrent">Visão geral</strong></div></div>
         <div class="topbar__right">
           <div id="serverChip" class="server-chip" title="Status do motor local"><span data-icon="folder-open"></span><span id="serverLabel">Conectando...</span><span id="serverStatusDot" class="server-chip__status"></span></div>
-          <label class="simulation-switch" title="O GED monitora a AAA e arquiva automaticamente relatórios reconhecidos com segurança">
+          <label class="simulation-switch" title="O Elevar GED monitora a AAA e arquiva automaticamente relatórios reconhecidos com segurança">
             <input id="simulationToggle" type="checkbox" checked disabled />
             <span class="simulation-switch__track"><span></span></span><span>Automático</span>
           </label>
