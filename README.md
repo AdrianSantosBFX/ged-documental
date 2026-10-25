@@ -2,6 +2,12 @@
 
 Evolução da v0.1.2, agora sob a marca **Elevar GED**, da Elevar. **Além do cadastro manual por Cartão CNPJ ou BrasilAPI, o sistema cadastra automaticamente empresas ainda desconhecidas quando recebe um relatório reconhecido na pasta `AAA`.** A integração com a BrasilAPI envia apenas o CNPJ.
 
+## Interface
+
+![Visão geral do Elevar GED com dados fictícios de demonstração](docs/images/visao-geral.png)
+
+Demonstração com empresas e documentos fictícios.
+
 ## Identidade e compatibilidade
 
 - Nome oficial do produto: **Elevar GED**.
